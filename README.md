@@ -52,7 +52,7 @@ All five return an `astrid.Result` and take the keywords of `demix` (time consta
 | `from_suite2p(folder, *, um_per_px, ...)` | a Suite2p plane folder: its registered movie, cells and frame rate | `astrid suite2p` |
 | `from_caiman(path, ...)` | a CaImAn result file (`cnm.save`): footprints made into masks, its movie, frame rate and pixel size | `astrid caiman` |
 | `territory_from_aqua2(movies, rois, aqua2_results, *, fps, um_per_px, ...)` | a movie and ROI masks, with the territory from AQuA2's result files | `astrid aqua2` |
-| `run_pipeline(movies, rois, *, fps, um_per_px, aqua2_results=None, marker=None, ...)` | one imaging location as in the paper's Fig. 1A: its recordings, the ROI masks, AQuA2's results and a structural astrocyte marker | `astrid pipeline location.yaml` |
+| `run_pipeline(movies, rois=None, *, fps, um_per_px, aqua2_results=None, marker=None, ...)` | one imaging location as in the paper's Fig. 1A: its recordings, the ROI masks (or the paper's ROI detection when none are given), AQuA2's results and a structural astrocyte marker | `astrid pipeline location.yaml` |
 
 ```python
 # 1. a movie and ROI masks, with astrocyte territory from any source
@@ -78,7 +78,7 @@ res = astrid.run_pipeline(["rec1.h5:mov", "rec2.h5:mov"], rois, fps=30.9, um_per
 
 ```yaml
 movies: [rec1.h5:mov, rec2.h5:mov]
-rois: rois.npz
+rois: rois.npz                               # optional: without it, the ROIs are detected
 fps: 30.9
 um_per_px: 2.0
 tau_r: 0.05
@@ -175,6 +175,43 @@ pixels touched by at least two AQuA2 events over the recordings of an imaging lo
 movie (`aqua2_settings/` holds the settings the paper used) and pass its result files to
 `territory_from_aqua2` or `run_pipeline`, or make the map yourself with `astrid.aqua2.territory(files)`.
 Any other source of astrocyte masks works too.
+
+## ROI detection
+
+ASTRID accepts ROI masks from any source. The package also holds the ROI detection of the paper's pipeline
+(Supplementary, "ROI detection"), which the paper does not evaluate:
+
+```python
+det = astrid.detect_rois(["rec1.h5:mov", "rec2.h5:mov"], fps=30.9,
+                         aqua2_results=["rec1_AQuA2.mat", "rec2_AQuA2.mat"])   # one AQuA2 result per movie
+res = astrid.demix(["rec1.h5:mov", "rec2.h5:mov"], det.rois, fps=30.9, um_per_px=2.0, tau_r=0.05, tau_d=0.4,
+                   candidates=det.candidates, territory=territory)
+```
+
+The steps (`astrid/detection.py`):
+- **Proposals.** SynQuant (Wang et al. 2020) proposes candidate ROIs on each recording's maximum and mean
+  projections and on a map of its fast activity (0.2–5 Hz). Pixels at the image edge and in the recording's
+  AQuA2 astrocyte mask are removed.
+- **Acceptance.** A candidate is accepted if its average trace looks like an active neuron.
+- **Merging.** The ROIs of a location's recordings are merged into one set.
+
+`astrid detect` does the same from the command line.
+
+SynQuant's scoring is in `astrid/synquant.py`. Its order-statistics test is adapted from the SynQuant (Wang et al.
+2020) and AQuA2 (Mi et al. 2025) MATLAB code of Guoqiang Yu's lab at Virginia Tech (now at Tsinghua University),
+with modifications by James Cheng Peng, used under the MIT license with the permission of Guoqiang Yu's lab.
+
+- Wang Y, Wang C, Ranefall P, et al. SynQuant: an automatic tool to quantify synapses from microscopy images.
+  *Bioinformatics* 36(5):1599–1606 (2020).
+- Mi X, Chen AB-Y, Duarte D, et al. Fast, accurate, and versatile data analysis platform for the quantification
+  of molecular spatiotemporal signals. *Cell* 188(10):2794–2809 (2025).
+
+## Spike inference
+
+ASTRID does not infer spikes. Its demixed ΔF/F0 can go to any spike inference method. In the paper's pipeline it
+went to [CASCADE](https://github.com/HelmchenLabSoftware/Cascade) (Rupprecht et al. 2021, *Nature Neuroscience*
+24:1324–1337), with its general model for excitatory neurons imaged at 30 Hz (`Global_EXC_30Hz_smoothing200ms`).
+CASCADE is not part of this package.
 
 ## Performance
 

@@ -6,6 +6,7 @@
     astrid caiman   cnm.hdf5 --tau-r 0.045 --tau-d 0.142 --out OUT
     astrid aqua2    --movie M.h5 --rois R.npz --aqua2 res1.mat res2.mat --fps 30.9 --um-per-px 2 ... --out OUT
     astrid pipeline location.yaml
+    astrid detect   --movie r1.h5 --movie r2.h5 --aqua2 r1.mat r2.mat --fps 30.9 --out ROIS
 
 Masks (``--rois``, ``--territory``, ``--candidates``): ``file.npz[:key]`` or ``file.npy`` holding (n, H, W)
 booleans or an (H, W) label image (0 = none), or ``file.mat[:key]`` (TUnCaT's ``FinalMasks``, (H, W, n)).
@@ -25,7 +26,7 @@ import numpy as np
 
 from astrid import Settings, __version__
 from astrid.api import OVERLAP_RULES, Result, demix
-from astrid.endpoints import from_caiman, from_suite2p, run_pipeline, territory_from_aqua2
+from astrid.endpoints import detect_rois, from_caiman, from_suite2p, run_pipeline, territory_from_aqua2
 
 
 def _split(spec: str) -> tuple[Path, str | None]:
@@ -140,9 +141,22 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--gap", type=int, help="AQuA2's regMaskGap, if the results do not record it")
     p = sub.add_parser("pipeline", help="one imaging location described by a YAML file (README)")
     p.add_argument("config", type=Path)
+    p = sub.add_parser("detect", help="the paper's ROI detection on one imaging location's recordings")
+    p.add_argument("--movie", action="append", required=True, help="movie file[:dataset]; one per recording")
+    p.add_argument("--aqua2", nargs="+", help="one AQuA2 result per movie, in the same order (astrocyte masks)")
+    p.add_argument("--gap", type=int, help="AQuA2's regMaskGap, if the results do not record it")
+    p.add_argument("--fps", type=float, required=True)
+    p.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
     if a.command == "pipeline":
         return _pipeline(a.config)
+    if a.command == "detect":
+        det = detect_rois(a.movie, fps=a.fps, aqua2_results=a.aqua2, gap=a.gap)
+        a.out.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(a.out / "rois.npz", rois=det.rois, candidates=det.candidates,
+                            detected_in=det.detected_in, astro_union=det.astro_union)
+        print(f"{a.out / 'rois.npz'}: {det.rois.shape[0]} ROIs from {len(a.movie)} recordings")
+        return 0
     if a.command == "demix":
         res = demix(a.movie, load_masks(a.rois), fps=a.fps, um_per_px=a.um_per_px,
                     territory=load_masks(a.territory) if a.territory else None,
@@ -182,7 +196,7 @@ def _pipeline(path: Path) -> int:
 
     movies = [rel(m) for m in cfg["movies"]]
     settings = Settings.from_dict(cfg["settings"]) if isinstance(cfg.get("settings"), dict) else Settings()
-    res = run_pipeline(movies, load_masks(rel(cfg["rois"])), fps=float(cfg["fps"]),
+    res = run_pipeline(movies, load_masks(rel(cfg["rois"])) if cfg.get("rois") else None, fps=float(cfg["fps"]),
                        um_per_px=float(cfg["um_per_px"]), tau_r=cfg.get("tau_r"), tau_d=cfg.get("tau_d"),
                        aqua2_results=[rel(f) for f in cfg.get("aqua2_results") or []] or None,
                        marker=[rel(f) for f in cfg.get("marker") or []] or None,

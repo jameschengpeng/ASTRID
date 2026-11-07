@@ -13,12 +13,13 @@ Every keyword that ``demix`` takes (``tau_r``, ``tau_d``, ``settings``, ``border
 from __future__ import annotations
 
 from collections.abc import Sequence
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-from astrid import aqua2, evidence
+from astrid import aqua2, detection, evidence
 from astrid.api import Result, as_movie, demix
 from astrid.patch import TERRITORY_MIN_EVENTS
 from astrid.readers import read_caiman, read_suite2p
@@ -66,7 +67,30 @@ def territory_from_aqua2(movies: Any, rois: np.ndarray, aqua2_results: str | Pat
     return res
 
 
-def run_pipeline(movies: Any, rois: np.ndarray, *, fps: float, um_per_px: float,
+def detect_rois(movies: Any, *, fps: float, aqua2_results: Sequence[str | Path] | None = None,
+                gap: int | None = None, zmap: Any = None) -> detection.LocationDetection:
+    """The paper's ROI detection on one imaging location (``astrid.detection``): every recording detected on
+    its own and the detections merged. ``aqua2_results``: one AQuA2 result file per movie, in the same order,
+    for each recording's astrocyte mask (none: no astrocyte exclusion). Returns the merged ROI masks
+    (``.rois``, (n, H, W)) and the map of all candidates (``.candidates``) that ``demix`` takes."""
+    mlist = movies if isinstance(movies, (list, tuple)) else [movies]
+    mv = [as_movie(x, f"rec{i}") for i, x in enumerate(mlist)]
+    shape = mv[0].shape()[1:]
+    if aqua2_results is None:
+        masks = [np.zeros(shape, dtype=bool) for _ in mv]
+    else:
+        files = [aqua2_results] if isinstance(aqua2_results, (str, Path)) else list(aqua2_results)
+        if len(files) != len(mv):
+            raise ValueError("detection needs one AQuA2 result per movie, in the same order")
+        masks = [detection.astrocyte_mask(aqua2.event_counts(aqua2.read_events(f), gap)) for f in files]
+        if any(m.shape != shape for m in masks):
+            raise ValueError(f"the AQuA2 results' frame differs from the movies' {shape}")
+    with ExitStack() as stack:
+        arrays = [stack.enter_context(m._open()) for m in mv]
+        return detection.detect_location(arrays, fps, masks, zmap)
+
+
+def run_pipeline(movies: Any, rois: np.ndarray | None = None, *, fps: float, um_per_px: float,
                  aqua2_results: str | Path | Sequence[str | Path] | None = None,
                  marker: Any = None, candidates: np.ndarray | None = None,
                  min_events: int = TERRITORY_MIN_EVENTS, gap: int | None = None,
@@ -75,13 +99,23 @@ def run_pipeline(movies: Any, rois: np.ndarray, *, fps: float, um_per_px: float,
     """One imaging location, as in the paper's Fig. 1A.
 
     - ``movies``: the location's recordings (one or a list), registered to one pixel grid, fitted jointly;
-    - ``rois``: the ROI masks (from any detection);
-    - ``aqua2_results``: AQuA2's result files for the location's recordings (they may include recordings that
-      are not demixed): the territory is the pixels touched by >= ``min_events`` events over all of them;
+    - ``rois``: the ROI masks (from any detection); None: detected here with the paper's detection
+      (``detect_rois``, which then needs one AQuA2 result per movie for the astrocyte masks), whose candidates
+      become ``candidates`` unless given;
+    - ``aqua2_results``: AQuA2's result files for the location's recordings: the territory is the pixels touched
+      by >= ``min_events`` events over all of them;
     - ``marker``: a structural astrocyte marker, as mean images or movies (one per recording, or one), from
       which the evidence map is made (``astrid.evidence.evidence_map``);
     - ``candidates``: a map of candidate cells that did not become ROIs (unclassified components).
-    ``out``: also save the result, the territory and the evidence map there."""
+    ``out``: also save the result, the territory, the evidence map (and detected ROIs) there."""
+    detected = None
+    if rois is None:
+        aq = None if aqua2_results is None else (
+            [aqua2_results] if isinstance(aqua2_results, (str, Path)) else list(aqua2_results))
+        detected = detect_rois(movies, fps=fps, aqua2_results=aq, gap=gap)
+        rois = detected.rois
+        if candidates is None:
+            candidates = detected.candidates
     shape = tuple(np.asarray(rois).shape[1:])
     terr = (aqua2.territory(aqua2_results, min_events=min_events, gap=gap, shape=shape)  # type: ignore[arg-type]
             if aqua2_results is not None else None)
@@ -100,11 +134,12 @@ def run_pipeline(movies: Any, rois: np.ndarray, *, fps: float, um_per_px: float,
         rho = evidence.evidence_map(images, margin_px=marker_margin_px)
     res = demix(movies, rois, fps=fps, um_per_px=um_per_px, territory=terr, evidence=rho,
                 candidates=candidates, **kwargs)
-    res.provenance.update(pipeline=True, min_events=int(min_events),
+    res.provenance.update(pipeline=True, min_events=int(min_events), rois_detected=detected is not None,
                           territory_px=None if terr is None else int(terr.sum()))
     if out is not None:
         d = Path(out)
         res.save(d)
+        extra = {} if detected is None else {"rois": detected.rois, "candidates": detected.candidates}
         np.savez_compressed(d / "inputs.npz", territory=terr if terr is not None else np.zeros(shape, bool),
-                            evidence=rho if rho is not None else np.zeros(shape))
+                            evidence=rho if rho is not None else np.zeros(shape), **extra)
     return res
