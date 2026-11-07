@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "astrid-demix"
+dynamic = ["version"]
+description = "ASTRID: astrocyte-informed demixing of neuronal calcium traces in one-channel imaging."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [{ name = "James Peng" }]
+keywords = ["calcium imaging", "demixing", "astrocytes", "neuropil", "two-photon", "one-photon"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "h5py>=3.8",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+tiff = ["tifffile>=2023.1"]
+dev = ["pytest>=8.0", "ruff>=0.5", "tifffile>=2023.1"]
+
+[project.scripts]
+astrid = "astrid.cli:main"
+
+[project.urls]
+Source = "https://github.com/jameschengpeng/ASTRID"
+
+[tool.setuptools.dynamic]
+version = { attr = "astrid.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: a full fit on a synthetic movie (seconds)"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "NPY"]

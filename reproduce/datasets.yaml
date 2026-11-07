@@ -1,0 +1,109 @@
+# ASTRID's inputs and settings on the paper's seven datasets, as they were run. Settings use the paper's names
+# (astrid.Settings); anything not listed is the default (Supplementary Table of default settings).
+#
+# Common to D2-D5: no astrocyte territory, no evidence map, border_px 0, overlapping released masks resolved by
+# overlaps: nearest (each shared pixel to the mask with the nearest centroid); kappa_d and kappa_np chosen by
+# leave-one-video-out cross-validation (one cell held out at a time on D3) over the dataset's 19 pairs below.
+# The 14 pairs shared by every public dataset:
+base_grid: &base_grid
+  - [1, 0.03]
+  - [1, 0.1]
+  - [1, 0.3]
+  - [2, 0.03]
+  - [2, 0.1]
+  - [2, 0.3]
+  - [4, 0.03]
+  - [4, 0.1]
+  - [4, 0.3]
+  - [4, 0.01]
+  - [8, 0.01]
+  - [8, 0.03]
+  - [16, 0.01]
+  - [16, 0.03]
+
+datasets:
+  D1:
+    description: two-photon mouse cortex; neurons GCaMP6m and astrocytes GCaMP6f in one channel
+    fps: 30.9
+    um_per_px: 2.0
+    tau_r: 0.05
+    tau_d: 0.4
+    border_px: 5                    # the registration margin
+    territory: pixels touched by >= 2 AQuA2 events over all recordings of the imaging location (aqua2_settings/D1.csv)
+    evidence: tagRFP (red channel) mean image of the location, astrid.evidence.evidence_map
+    candidates: the ROI detection's candidate map
+    settings: {}                    # the defaults
+    leakage_test_settings: {max_iterations: 2000}    # the leakage test's fits ran with a limit of 2000
+  D2_ABO:
+    description: Allen Brain Observatory two-photon V1, GCaMP6f, with TUnCaT's manual transient labels
+    fps: 30.0
+    um_per_px: 0.785
+    tau_r: 0.045
+    tau_d: 0.142
+    border_px: 0
+    overlaps: nearest
+    grid: [*base_grid, [[8, 0.1], [16, 0.1], [32, 0.01], [32, 0.03], [32, 0.1]]]
+  D3_cai1:
+    description: CRCNS cai-1 (GENIE), GCaMP6f or GCaMP6s with simultaneous electrophysiology
+    fps: each recording's (rounded to 4 decimals)
+    um_per_px: 0.47
+    tau_r: {GCaMP6f: 0.045, GCaMP6s: 0.179}
+    tau_d: {GCaMP6f: 0.142, GCaMP6s: 0.550}
+    border_px: 0
+    overlaps: nearest
+    grid: [*base_grid, [[0.5, 0.01], [0.5, 0.03], [0.5, 0.1], [1, 0.01], [2, 0.01]]]
+  D4_NAOMi:
+    description: NAOMi two-photon simulations (TUnCaT's 10 videos)
+    fps: 30.0
+    um_per_px: 1.0
+    tau_r: 0.045
+    tau_d: 0.142
+    border_px: 0
+    overlaps: nearest
+    grid: [*base_grid, [[32, 0.03], [64, 0.03], [1, 1], [2, 1], [4, 1]]]
+  D5_one_photon:
+    description: one-photon mouse hippocampus (TUnCaT's 9 videos), GCaMP6f
+    fps: 20.0
+    um_per_px: 3.5
+    tau_r: 0.045
+    tau_d: 0.142
+    border_px: 0
+    overlaps: nearest
+    grid: [*base_grid, [[8, 0.003], [16, 0.003], [32, 0.003], [32, 0.01], [32, 0.03]]]
+  D6:
+    description: two-color recordings with D1's setup; neurons jRGECO1a (red), astrocytes GCaMP6f (green)
+    fps: 30.9
+    um_per_px: 2.0
+    tau_r: 0.05
+    tau_d: 0.4
+    border_px: 5
+    territory: pixels touched by >= 2 AQuA2 events in the astrocyte channel over the location's recordings (aqua2_settings/D6_default.csv)
+    evidence: none
+    candidates: the ROI detection's candidate map (neuronal channel)
+    settings: {}
+  D7_location1:
+    description: one-photon spinal cord (wearable microscope); nuclear GCaMP7f neurons and GCaMP6f astrocytes in one channel
+    fps: 22.7
+    um_per_px: 2.07
+    tau_r: 0.0246                   # estimated from the recordings (Supplementary, Datasets)
+    tau_d: 2.4126
+    border_px: 5
+    territory: pixels touched by >= 1 of the recording's own local AQuA2 events (aqua2_settings/D7_location1.csv)
+    evidence: none
+    candidates: none
+    settings: {baseline_bin_s: 3.0, baseline_window_s: null, baseline_percentile: 10.0,
+               trend_pct_per_s: -0.13918120899243336}
+    leakage_test_settings: {max_iterations: 2000}
+  D7_location2:
+    description: as location 1
+    fps: 15.0
+    um_per_px: 2.07
+    tau_r: 0.0362
+    tau_d: 1.3879
+    border_px: 5
+    territory: as location 1 (aqua2_settings/D7_location2.csv)
+    evidence: none
+    candidates: none
+    settings: {baseline_bin_s: 3.0, baseline_window_s: null, baseline_percentile: 10.0,
+               trend_pct_per_s: -0.07277474876945786}
+    leakage_test_settings: {max_iterations: 2000}

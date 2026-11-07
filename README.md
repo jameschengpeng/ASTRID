@@ -1,1 +1,189 @@
 # ASTRID
+
+**ASTRocyte-Informed Demixing** of neuronal calcium traces.
+
+In calcium imaging where neurons and astrocytes share one fluorescence channel, an ROI drawn on a neuron
+also collects light from nearby astrocytes, neighbouring neurons and the neuropil. ASTRID fits, for each ROI,
+a small model of the patch of pixels around it, with the neuron's own signal, the neighbouring neurons,
+astrocyte components placed on astrocyte territory, and the local neuropil, each with its own spatial
+support and temporal assumptions. It returns the ROI's demixed trace (ΔF and ΔF/F0) with the other sources
+removed. Without astrocyte territory it runs as a neuron-plus-neuropil demixing.
+
+The method and its evaluation are described in the paper (citation to come). This repository holds the
+package and the code to reproduce the paper's analysis (`reproduce/`).
+
+## Install
+
+```bash
+pip install astrid-demix            # once released; until then, from a clone:
+pip install -e .                    # numpy, scipy, h5py, pyyaml; add [tiff] to read TIFF movies
+```
+
+Python 3.10 or later. AQuA2 (MATLAB) is needed only to make astrocyte territory from a movie; it is not part of
+this package (see [Astrocyte territory](#astrocyte-territory)).
+
+## Quick start
+
+```python
+import numpy as np
+import astrid
+
+# movie: (T, H, W) array (or an HDF5 dataset, a .npy/.tif path); rois: (n, H, W) boolean masks
+res = astrid.demix(movie, rois, fps=30.0, um_per_px=0.8, tau_r=0.045, tau_d=0.142)
+dff = res.dff                      # (n, T) demixed dF/F0, NaN rows for ROIs not fitted
+res.save("astrid_out")             # astrid_out/result.npz and result.json (the provenance)
+```
+
+The same from the command line:
+
+```bash
+astrid demix --movie movie.h5:data --rois rois.npz --fps 30 --um-per-px 0.8 \
+             --tau-r 0.045 --tau-d 0.142 --out astrid_out
+```
+
+## The endpoints
+
+All five return an `astrid.Result` and take the keywords of `demix` (time constants, `settings`, `border_px`,
+`workers`, `export_components`, ...). Each has a command (`astrid <command> --help`).
+
+| Endpoint | What it takes | Command |
+|---|---|---|
+| `demix(movies, rois, *, fps, um_per_px, ...)` | a movie (or several recordings of one field) and ROI masks; optionally astrocyte territory, an evidence map, candidate cells | `astrid demix` |
+| `from_suite2p(folder, *, um_per_px, ...)` | a Suite2p plane folder: its registered movie, cells and frame rate | `astrid suite2p` |
+| `from_caiman(path, ...)` | a CaImAn result file (`cnm.save`): footprints made into masks, its movie, frame rate and pixel size | `astrid caiman` |
+| `territory_from_aqua2(movies, rois, aqua2_results, *, fps, um_per_px, ...)` | a movie and ROI masks, with the territory from AQuA2's result files | `astrid aqua2` |
+| `run_pipeline(movies, rois, *, fps, um_per_px, aqua2_results=None, marker=None, ...)` | one imaging location as in the paper's Fig. 1A: its recordings, the ROI masks, AQuA2's results and a structural astrocyte marker | `astrid pipeline location.yaml` |
+
+```python
+# 1. a movie and ROI masks, with astrocyte territory from any source
+res = astrid.demix(movie, rois, fps=30.9, um_per_px=2.0, tau_r=0.05, tau_d=0.4, territory=astro_masks)
+
+# 2. a Suite2p run (its cells, data.bin and ops['fs'])
+res = astrid.from_suite2p("suite2p/plane0", um_per_px=0.8, tau_r=0.045, tau_d=0.142)
+
+# 3. a CaImAn run (estimates.A thresholded as CaImAn draws contours; its memmap, fr and dxy)
+res = astrid.from_caiman("cnm_results.hdf5", tau_r=0.045, tau_d=0.142)
+
+# 4. territory from AQuA2: pixels touched by >= 2 events over the result files given
+res = astrid.territory_from_aqua2(movie, rois, ["rec1_AQuA2.mat", "rec2_AQuA2.mat"],
+                                  fps=30.9, um_per_px=2.0, tau_r=0.05, tau_d=0.4)
+
+# 5. one imaging location: two recordings fitted jointly, territory from AQuA2, evidence from a marker
+res = astrid.run_pipeline(["rec1.h5:mov", "rec2.h5:mov"], rois, fps=30.9, um_per_px=2.0,
+                          tau_r=0.05, tau_d=0.4, aqua2_results=["rec1_AQuA2.mat", "rec2_AQuA2.mat"],
+                          marker=[red_mean_1, red_mean_2], out="astrid_out")
+```
+
+`astrid pipeline` reads the same arguments from a YAML file (paths relative to it):
+
+```yaml
+movies: [rec1.h5:mov, rec2.h5:mov]
+rois: rois.npz
+fps: 30.9
+um_per_px: 2.0
+tau_r: 0.05
+tau_d: 0.4
+aqua2_results: [rec1_AQuA2.mat, rec2_AQuA2.mat]
+marker: [rec1_red.h5:mov, rec2_red.h5:mov]   # optional
+out: astrid_out
+```
+
+## Inputs
+
+- **Movies.** (T, H, W), one recording or a list of recordings of the same field registered to one pixel
+  grid (fitted jointly, with footprints shared across recordings). In memory, or anything that slices along
+  time (`h5py.Dataset`, `numpy.memmap`), or a path: `file.h5:dataset`, `file.npy`, `file.tif` (needs
+  `tifffile`). Raw fluorescence, not ΔF/F: ASTRID computes each pixel's baseline itself.
+- **ROI masks.** (n, H, W) booleans. Overlapping masks are refused unless `overlaps="nearest"`, which gives
+  each shared pixel to the mask with the nearest centroid. The demixed trace averages the ROI's pixels.
+- **`fps` and `um_per_px`** are required. Lengths (patch margin, supports, ring) are set in micrometres and
+  converted with the pixel size; time scales (baseline, noise band, kernel, astrocyte prior) in seconds.
+- **`tau_r`, `tau_d`**: the rise and decay time constants (s) of the indicator's impulse response. They have
+  no default, because they depend on the indicator. The paper used 0.045 and 0.142 s for GCaMP6f, 0.179
+  and 0.550 s for GCaMP6s, and 0.05 and 0.4 s for its GCaMP6m recordings.
+- **`territory`** (optional): astrocyte territory as an (H, W) map or (m, H, W) masks, from any source. In
+  each patch, the up to three largest regions of territory (at least 80 µm²) become astrocyte components.
+  Without territory there are no astrocyte components.
+- **`evidence`** (optional): a structural evidence map ρ in [0, 1], (H, W), from an astrocyte marker
+  imaged in another channel (`astrid.evidence.evidence_map(mean_image)`). Astrocyte footprints on pixels with
+  weak evidence are penalized. Without a map the penalty is off.
+- **`candidates`** (optional): an (H, W) map of candidate cells that are not ROIs (a detection's rejected
+  proposals); its pieces near an ROI are fitted as unclassified sources and subtracted.
+- **`border_px`** (default 0): a margin at the field's edge that no patch uses (e.g. a registration margin);
+  ROIs that touch it are not fitted.
+
+## Outputs
+
+`Result.arrays()` (and `result.npz`) hold, per ROI (row i is mask i):
+
+| Key | Shape | Content |
+|---|---|---|
+| `dff__<rec>` | (n, T) | the demixed trace as ΔF/F0 (ΔF over the ROI average of the baseline F0) |
+| `delta_f__<rec>` | (n, T) | the demixed trace in fluorescence units: the ROI average of the baseline-subtracted movie minus the fitted contributions of every other component (the residual is kept) |
+| `baseline__<rec>` | (n, T) | the ROI average of F0 |
+| `ring__<rec>` | (n, T) | the ring subtraction for comparison, ROI mean − 0.7 × ring mean (4–16 µm out), fluorescence units |
+| `fitted`, `converged`, `iterations`, `stop`, `error` | (n,) | the fit's outcome; a fit that fails is recorded and the others go on |
+| `n_neighbours`, `n_unclassified`, `n_astro`, `pixels`, `seconds` | (n,) | the patch's components and size, and the time |
+
+`<rec>` is the recording's name (`recording_names=`, default `rec0`, `rec1`, ...). With
+`export_components=True`, also:
+
+- `contrib_<kind>__<rec>` (n, T), for `neighbours`, `unclassified`, `astro`, `neuropil`: the ROI-average
+  contribution of each other kind of component, as ΔF/F0 on the ROI's baseline (0 where the patch has none).
+  `dff` plus these is the ROI average of the movie's ΔF/F0.
+- one row per component of every fitted patch (the ROI's own first): `component_roi`, `component_name`,
+  `component_kind`, `component_dff__<rec>` (the component's trace as ΔF/F0 averaged over its spatial
+  support, as in the paper's Fig. 1E), and its footprint as a sparse list (`component_fp_offset`,
+  `component_fp_row`, `component_fp_col`, `component_fp_weight`; `astrid.component_footprint` rebuilds it).
+
+The astrocyte components are nuisance terms that keep astrocyte signal out of the neuronal traces; their
+traces are not validated as astrocyte readouts.
+
+## Settings
+
+`astrid.Settings` holds the model's settings in the paper's names; the defaults are those of the paper's
+Supplementary Table of default settings.
+
+| Setting | Default | Meaning | Name in the analysis code |
+|---|---|---|---|
+| `kappa_d` | 2 | drive: the height, in noise s.d., a transient must reach before any drive is assigned to it | `kappa_s` |
+| `kappa_a` | 10 | astrocytes: a cosine coefficient above 2 f_a shrinks by 1/(1 + κ_a) | `kappa_a` |
+| `kappa_np` | 0.1 | neuropil: smoothness of its footprint | `kappa_b` |
+| `kappa_rho` | 1 | evidence: astrocyte footprint on weak structural evidence | `kappa_t` |
+| `f_a` | 0.2 Hz | cutoff of the astrocytes' low-frequency prior | `f_a` |
+| `neuropil_cap` | True | the neuropil footprint may not be higher on the ROI than around it | `neuropil_cap` |
+| `max_iterations`, `footprint_steps`, `drive_steps` | 600, 200, 300 | iteration limits | `n_outer`, `n_h`, `n_deconv` |
+| `check_every`, `tolerance` | 10, 1e-3 | the convergence check | `block`, `tol_target` |
+| `baseline_bin_s`, `baseline_window_s`, `baseline_percentile` | 1 s, 60 s, 10 | F0: the moving 10th percentile of 1-s means over 60 s | |
+| `trend_pct_per_s` | 0 | with `baseline_window_s=None`: one percentile along a line of this slope (the paper's short one-photon recordings: 3-s bins) | |
+
+```python
+s = astrid.Settings(kappa_d=4, kappa_np=0.3)       # or Settings.from_yaml("settings.yaml")
+res = astrid.demix(movie, rois, fps=30, um_per_px=1.0, tau_r=0.045, tau_d=0.142, settings=s)
+```
+
+The fixed geometry (patch margin 16 µm, neuronal support margin 4 µm, astrocyte support margin 2 µm, up to
+three regions of territory of at least 80 µm², the 5-Hz noise band) is in `astrid/patch.py`.
+
+## Astrocyte territory
+
+ASTRID does not detect astrocytes. The paper's territory came from
+[AQuA2](https://github.com/yu-lab-vt/AQuA2) (Mi et al. 2025; MATLAB, GPL-2; tested at commit 6e9a965): the
+pixels touched by at least two AQuA2 events over the recordings of an imaging location. Run AQuA2 on your
+movie (`aqua2_settings/` holds the settings the paper used) and pass its result files to
+`territory_from_aqua2` or `run_pipeline`, or make the map yourself with `astrid.aqua2.territory(files)`.
+Any other source of astrocyte masks works too.
+
+## Performance
+
+Each ROI is fitted separately; `workers=N` fits N ROIs at a time in separate processes (set one BLAS thread per
+process, e.g. `OMP_NUM_THREADS=1`).
+
+## Reproducing the paper
+
+See [`reproduce/README.md`](reproduce/README.md).
+
+## License
+
+MIT (see `LICENSE`). AQuA2, the peer methods used in the paper's benchmark, and their data are not included
+and keep their own licenses.
