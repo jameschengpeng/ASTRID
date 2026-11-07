@@ -8,7 +8,7 @@ This folder holds what is needed to rerun the paper's evaluation of ASTRID on it
 | File | Content |
 |---|---|
 | `datasets.yaml` | ASTRID's inputs and settings on each dataset as they were run: frame rate, pixel size, time constants, border, territory, evidence map, candidates, the cross-validation grids of D2–D5, D7's baseline |
-| `metrics.py` | the measures and statistics: the injection test's error (below 0.5 Hz), the leakage, the gain, the failure rule, the paired Wilcoxon signed-rank test and Holm's correction |
+| `astrid_repro/metrics.py` | the measures and statistics: the injection test's error (below 0.5 Hz), the leakage, the gain, the failure rule, the paired Wilcoxon signed-rank test and Holm's correction |
 | `../aqua2_settings/` | the AQuA2 settings that made the astrocyte territory of D1, D6 and D7 |
 
 ASTRID itself is the `astrid` package. On a real case of every dataset type, its traces were checked against the
@@ -33,7 +33,7 @@ Every method received the same movies and ROI masks.
    1.13.2 (seeded with the masks), Suite2p 1.1.0 (its neuropil subtraction on the given masks), and the ring
    subtraction (`ring__<rec>` in ASTRID's output). TUnCaT and CNMF also ran with the astrocyte territory as
    extra components on D1, D6 and D7 ("+ terr."). *Runners to come.*
-4. **Tests and scores** (`metrics.py`).
+4. **Tests and scores** (`astrid_repro/metrics.py`).
    - **D1 and D7:** the injection and leakage tests, with error and leakage.
    - **D6:** the leakage of the real astrocyte channel, from the sum of the two channels against the neuronal
      channel alone, below 5 Hz.
@@ -43,7 +43,7 @@ Every method received the same movies and ROI masks.
      come.*
 5. **Statistics:** the mean ± SD over the units (imaging locations on D1 and D6, recordings on D7, videos on D2,
    D4 and D5, cells on D3). ASTRID is compared with each other method by a paired two-sided Wilcoxon
-   signed-rank test, with Holm's correction over the comparisons of each measure (`metrics.py`). *The scripts
+   signed-rank test, with Holm's correction over the comparisons of each measure (`astrid_repro/metrics.py`). *The scripts
    that write the paper's tables and figures are to come.*
 
 ## Running ASTRID as in the paper

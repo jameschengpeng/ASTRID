@@ -12,7 +12,7 @@ import astrid
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "reproduce"))
-import metrics  # noqa: E402
+from astrid_repro import metrics  # noqa: E402
 
 
 def test_dataset_settings() -> None:
