@@ -93,7 +93,9 @@ out: astrid_out
 - **Movies.** (T, H, W), one recording or a list of recordings of the same field registered to one pixel
   grid (fitted jointly, with footprints shared across recordings). In memory, or anything that slices along
   time (`h5py.Dataset`, `numpy.memmap`), or a path: `file.h5:dataset`, `file.npy`, `file.tif` (needs
-  `tifffile`). Raw fluorescence, not ΔF/F: ASTRID computes each pixel's baseline itself.
+  `tifffile`). Raw fluorescence, not ΔF/F: ASTRID computes each pixel's baseline itself. A MATLAB v7.3 file
+  read through h5py comes out with MATLAB's axes reversed, (T, W, H) for an (H, W, T) movie: transpose its
+  frames (or the masks) so that movie and masks share one (H, W) frame.
 - **ROI masks.** (n, H, W) booleans. Overlapping masks are refused unless `overlaps="nearest"`, which gives
   each shared pixel to the mask with the nearest centroid. The demixed trace averages the ROI's pixels.
 - **`fps` and `um_per_px`** are required. Lengths (patch margin, supports, ring) are set in micrometres and
