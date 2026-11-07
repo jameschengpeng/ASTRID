@@ -1,6 +1,14 @@
 # ASTRID's inputs and settings on the paper's seven datasets, as they were run. Settings use the paper's names
 # (astrid.Settings); anything not listed is the default (Supplementary Table of default settings).
 #
+# Iterations: max_iterations is the default, 600, for every fit (D1 and D7's injection tests, D6, every D2-D5
+# setting, and every runtime measurement) except the leakage tests of D1 and D7, whose fits ran with a limit of
+# 2000 (leakage_test_settings below).
+#
+# The edge: on D1, D6 and D7, ROIs within border_px (5) of the field's edge, the registration margin, were not
+# cases for any method (no leakage target or injection source; injection sites lay at least 15 px inside the
+# field), and every method's movie stopped at the margin.
+#
 # Common to D2-D5: no astrocyte territory, no evidence map, border_px 0, overlapping released masks resolved by
 # overlaps: nearest (each shared pixel to the mask with the nearest centroid); kappa_d and kappa_np chosen by
 # leave-one-video-out cross-validation (one cell held out at a time on D3) over the dataset's 19 pairs below.
