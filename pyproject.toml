@@ -9,7 +9,7 @@ description = "ASTRID: astrocyte-informed demixing of neuronal calcium traces in
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
-authors = [{ name = "James Peng" }]
+authors = [{ name = "James Cheng Peng" }]
 keywords = ["calcium imaging", "demixing", "astrocytes", "neuropil", "two-photon", "one-photon"]
 classifiers = [
     "Programming Language :: Python :: 3",
