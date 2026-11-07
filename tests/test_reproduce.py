@@ -46,3 +46,10 @@ def test_measures() -> None:
     assert not metrics.usable(np.ones(10)) and not metrics.usable(None) and metrics.usable(y)
     p = metrics.holm({"a": 0.01, "b": 0.04, "c": 0.03})
     assert p == {"a": 0.03, "c": 0.06, "b": 0.06}
+
+
+def test_mit_code_never_imports_the_gpl_scorer() -> None:
+    """reproduce/tuncat_eval is GPL-2 (a port of TUnCaT's evaluation): no MIT file may import it."""
+    for path in [*(ROOT / "src").rglob("*.py"), *(ROOT / "reproduce" / "astrid_repro").rglob("*.py")]:
+        text = path.read_text(encoding="utf-8")
+        assert "import tuncat_eval" not in text and "from tuncat_eval" not in text, path

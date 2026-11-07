@@ -7,6 +7,12 @@ Install the extra `reproduce` (pandas) with the package (`pip install -e ".[repr
 from this folder (`python -m astrid_repro.<module> --help`). The peer methods (FISSA, TUnCaT, CaImAn, Suite2p)
 are GPL and are not part of this repository: install them in an environment of their own.
 
+**Licenses.** Everything here is MIT, like the `astrid` package, except `tuncat_eval/`, which is GPL-2 (its own
+`LICENSE`). `tuncat_eval/` is the F1 scorer of D2, D4 and D5, a line-by-line port of the MATLAB evaluation code
+of TUnCaT (Bao et al. 2022, https://github.com/YijunBao/TUnCaT), which is GPL-2. A port keeps the license of the
+code it follows, so this folder keeps TUnCaT's license and is kept apart from the MIT code. The `astrid` package
+and `astrid_repro` never import it; it is handed to them at run time (below).
+
 ## What is here
 
 | File | Content |
@@ -17,6 +23,7 @@ are GPL and are not part of this repository: install them in an environment of t
 | `astrid_repro/suite2p_runner.py` | Suite2p's neuropil subtraction on given masks: whole videos (D2, D4, D5), cai-1 (D3) and exported cases |
 | `astrid_repro/stats.py` | the tables of D1 (ASTRID against seven methods), the ablations, D6 (its per-recording scoring and table) and D7 (by recording and by location) |
 | `astrid_repro/public_data.py`, `ring.py`, `cv.py`, `tables_public.py` | D2–D5: the readers of the public data and of their ground truth, the ring subtraction, the leave-one-out cross-validation over settings and detection thresholds, the tables |
+| `tuncat_eval/` (**GPL-2**) | the F1 scorer of D2, D4 and D5: TUnCaT's transient detection and matching, the ground-truth transients of the NAOMi videos, the template filtering, and the rule for CNMF results with removed components |
 | `../aqua2_settings/` | the AQuA2 settings that made the astrocyte territory of D1, D6 and D7 |
 
 **Checked against the analysis code that produced the paper's results.**
@@ -59,9 +66,13 @@ every method.
      builders, which add the known signals to the movies before the fits, wait on the release of D1 and D7.*
    - **D6:** the leakage of the real astrocyte channel, from the sum of the two channels against the neuronal
      channel alone, below 5 Hz (`stats.py d6-scores`).
-   - **D2, D4 and D5:** the F1 score of transient detection with TUnCaT's evaluation.
-     *That scorer is a port of TUnCaT's GPL-2 MATLAB code and is not included yet.* `cv.f1_grid` takes it as an
-     argument.
+   - **D2, D4 and D5:** the F1 score of transient detection with TUnCaT's evaluation (`tuncat_eval/`, GPL-2),
+     handed to the MIT code at run time:
+
+     ```bash
+     python -m astrid_repro.tables_public grids --dataset ABO --archive <TUnCaT archive> --ours <root> ... \
+         --scorer tuncat_eval.evaluation:scorer --cnmf-fill tuncat_eval.evaluation:cnmf_fill --out <grids>
+     ```
    - **D3:** the correlation with the calcium predicted from the recorded spikes (`public_data.py`).
 5. **Statistics and tables.** The mean ± SD is taken over the units: the imaging locations on D1 and D6, the
    recordings on D7, the videos on D2, D4 and D5, the cells on D3. ASTRID is compared with each other method by a
