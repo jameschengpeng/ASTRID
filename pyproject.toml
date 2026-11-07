@@ -25,6 +25,7 @@ dependencies = [
 
 [project.optional-dependencies]
 tiff = ["tifffile>=2023.1"]
+reproduce = ["pandas>=2.0"]          # reproduce/astrid_repro (the peer methods are installed apart)
 dev = ["pytest>=8.0", "ruff>=0.5", "tifffile>=2023.1"]
 
 [project.scripts]
