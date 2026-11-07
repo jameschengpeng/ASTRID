@@ -20,9 +20,10 @@ Setting                Default  Meaning (paper section)
 ``check_every``        10       iterations between checks of convergence
 ``tolerance``          1e-3     tolerance of the check of convergence
 ``step_tolerance``     1e-7     relative decrease of the objective that ends a footprint update early
-``baseline_bin_s``     1 s      the baseline F0 of each pixel: the ``baseline_percentile`` (10th) of its
-``baseline_window_s``  60 s     means over bins of ``baseline_bin_s``, moving over ``baseline_window_s``;
-``baseline_percentile`` 10      with ``baseline_window_s`` None, one percentile over the whole recording,
+``baseline_bin_s``     1 s      the baseline F0 of each pixel: by default the 10th percentile of its 1-s
+``baseline_window_s``  60 s     means in a moving 60-s window (``baseline_percentile`` of the means over
+``baseline_percentile`` 10      bins of ``baseline_bin_s``, moving over ``baseline_window_s``); with
+                                ``baseline_window_s`` None, one percentile over the whole recording,
 ``trend_pct_per_s``    0        along a line whose slope is ``trend_pct_per_s`` percent per second
                                 (negative for a recording that dims; the paper's one-photon D7: 3-s
                                 bins, no window, its locations' bleaching rates, -0.139 and -0.073)

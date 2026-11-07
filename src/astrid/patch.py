@@ -19,9 +19,10 @@ constraints", and Supplementary, "Spatial supports"), and the pixel statistics c
 (``REFERENCE_UM_PER_PX``); a field at another pixel size multiplies every length by ``Field.px_scale`` = 2 um /
 its um per pixel, and every area by its square.
 
-**Before fitting** (``pixel_statistics``): per pixel, the fixed baseline F0 (a 60-s moving 10th percentile of
-1-s means, interpolated to the frames) and the noise variance above ``NOISE_F_CUT`` (5 Hz), whose inverse is
-the pixel's weight. Pixels are indexed column-major (0-based) on the (H, W) frame everywhere here.
+**Before fitting** (``pixel_statistics``): per pixel, the fixed baseline F0 (by default the 10th percentile of
+its 1-s means in a moving 60-s window, interpolated to the frames) and the noise variance above ``NOISE_F_CUT``
+(5 Hz), whose inverse is the pixel's weight. Pixels are indexed column-major (0-based) on the (H, W) frame
+everywhere here.
 """
 
 from __future__ import annotations
@@ -84,7 +85,7 @@ def dilate(mask: np.ndarray, px: float) -> np.ndarray:
 @dataclass(frozen=True)
 class BaselineRule:
     """How each pixel's baseline F0 is computed before fitting (``baseline``). The default is the paper's:
-    the moving 10th percentile of 1-s means over 60 s. ``window_s`` None: one percentile over the whole
+    the 10th percentile of its 1-s means in a moving 60-s window. ``window_s`` None: one percentile over the whole
     recording, along a straight line with a slope of ``trend_pct_per_s`` percent per second, negative for a
     recording that dims (the rule of the paper's short one-photon recordings, D7, with 3-s bins)."""
     bin_s: float = 1.0

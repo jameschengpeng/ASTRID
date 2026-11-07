@@ -111,8 +111,8 @@ out: astrid_out
   weak evidence are penalized. Without a map the penalty is off.
 - **`candidates`** (optional): an (H, W) map of candidate cells that are not ROIs (a detection's rejected
   proposals); its pieces near an ROI are fitted as unclassified sources and subtracted.
-- **`border_px`** (default 0): a margin at the field's edge that no patch uses (e.g. a registration margin);
-  ROIs that touch it are not fitted.
+- **`border_px`** (default 0): a margin at the image edge, such as one left by registration, whose pixels are
+  left out of every patch; ROIs within it are not fitted. The paper's D1, D6 and D7 had a 5-pixel margin.
 
 ## Outputs
 
@@ -156,7 +156,7 @@ Supplementary Table of default settings.
 | `neuropil_cap` | True | the neuropil footprint may not be higher on the ROI than around it | `neuropil_cap` |
 | `max_iterations`, `footprint_steps`, `drive_steps` | 600, 200, 300 | iteration limits | `n_outer`, `n_h`, `n_deconv` |
 | `check_every`, `tolerance` | 10, 1e-3 | the convergence check | `block`, `tol_target` |
-| `baseline_bin_s`, `baseline_window_s`, `baseline_percentile` | 1 s, 60 s, 10 | F0: the moving 10th percentile of 1-s means over 60 s | |
+| `baseline_bin_s`, `baseline_window_s`, `baseline_percentile` | 1 s, 60 s, 10 | the baseline F0 of each pixel: the 10th percentile of its 1-s means in a moving 60-s window | |
 | `trend_pct_per_s` | 0 | with `baseline_window_s=None`: one percentile along a line of this slope (the paper's short one-photon recordings: 3-s bins) | |
 
 ```python

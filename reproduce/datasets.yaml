@@ -1,13 +1,16 @@
 # ASTRID's inputs and settings on the paper's seven datasets, as they were run. Settings use the paper's names
 # (astrid.Settings); anything not listed is the default (Supplementary Table of default settings).
 #
-# Iterations: max_iterations is the default, 600, for every fit (D1 and D7's injection tests, D6, every D2-D5
-# setting, and every runtime measurement) except the leakage tests of D1 and D7, whose fits ran with a limit of
-# 2000 (leakage_test_settings below).
+# Baseline: by default, F0 of each pixel is the 10th percentile of its 1-s means in a moving 60-s window (D7's own
+# rule is in its settings below).
 #
-# The edge: on D1, D6 and D7, ROIs within border_px (5) of the field's edge, the registration margin, were not
-# cases for any method (no leakage target or injection source; injection sites lay at least 15 px inside the
-# field), and every method's movie stopped at the margin.
+# Iterations: the fits of ASTRID were allowed at most 600 iterations, the default, everywhere (D1 and D7's
+# injection tests, D6, every D2-D5 setting and every runtime measurement) except in the leakage tests of D1 and
+# D7, where they were allowed at most 2,000 iterations (leakage_test_settings below).
+#
+# The edge: on D1, D6 and D7, ROIs within 5 pixels of the image edge, a margin left by registration, were not used
+# as cases, and the pixels of this margin were left out of the input of every method (border_px: 5). Injection
+# sites lay at least 15 pixels inside the field.
 #
 # Common to D2-D5: no astrocyte territory, no evidence map, border_px 0, overlapping released masks resolved by
 # overlaps: nearest (each shared pixel to the mask with the nearest centroid); kappa_d and kappa_np chosen by
@@ -41,7 +44,7 @@ datasets:
     evidence: tagRFP (red channel) mean image of the location, astrid.evidence.evidence_map
     candidates: the ROI detection's candidate map
     settings: {}                    # the defaults
-    leakage_test_settings: {max_iterations: 2000}    # the leakage test's fits ran with a limit of 2000
+    leakage_test_settings: {max_iterations: 2000}    # at most 2,000 iterations in the leakage test, not 600
   D2_ABO:
     description: Allen Brain Observatory two-photon V1, GCaMP6f, with TUnCaT's manual transient labels
     fps: 30.0

@@ -17,7 +17,9 @@ analysis code that produced the paper's results: they are bitwise equal (the pub
 
 ## The route, per dataset
 
-Every method received the same movies and ROI masks.
+Every method received the same movies and ROI masks. On D1, D6 and D7, ROIs within 5 pixels of the image edge, a
+margin left by registration, were not used as cases, and the pixels of this margin were left out of the input of
+every method.
 
 1. **Inputs.**
    - D2–D5 are public. D2 is the Allen Brain Observatory videos (AllenSDK) with TUnCaT's manual masks and
@@ -26,6 +28,10 @@ Every method received the same movies and ROI masks.
      (https://crcns.org, a free account).
    - D1, D6 and D7 were recorded by the authors: *their availability is to be announced.*
 2. **ASTRID** on each case with `astrid.demix` and the settings of `datasets.yaml`.
+   - The baseline F0 of each pixel is, by default, the 10th percentile of its 1-s means in a moving 60-s window
+     (D7's own rule is in `datasets.yaml`).
+   - The fits were allowed at most 600 iterations, the default, except in the leakage tests of D1 and D7, where
+     they were allowed at most 2,000.
    - On D2–D5, every (kappa_d, kappa_np) pair of the dataset's grid is run on every video. Leave-one-video-out
      cross-validation (leave-one-cell-out on D3) then picks the setting that is applied to each held-out
      video.
@@ -43,8 +49,8 @@ Every method received the same movies and ROI masks.
      come.*
 5. **Statistics:** the mean ± SD over the units (imaging locations on D1 and D6, recordings on D7, videos on D2,
    D4 and D5, cells on D3). ASTRID is compared with each other method by a paired two-sided Wilcoxon
-   signed-rank test, with Holm's correction over the comparisons of each measure (`astrid_repro/metrics.py`). *The scripts
-   that write the paper's tables and figures are to come.*
+   signed-rank test, with Holm's correction over the comparisons of each measure (`astrid_repro/metrics.py`).
+   *The scripts that write the paper's tables and figures are to come.*
 
 ## Running ASTRID as in the paper
 
