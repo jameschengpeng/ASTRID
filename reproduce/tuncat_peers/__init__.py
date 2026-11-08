@@ -17,9 +17,9 @@ neurons below 0.99), since CaImAn has changed. The released traces remain a clos
 
 What a rerun gives: run through this folder in the paper's environments (one D2 video, all settings), FISSA's
 and CNMF's traces were the paper's bit for bit. TUnCaT's unmixing is not deterministic from run to run: its raw
-and background traces were the paper's bit for bit, but its NMF ended a few iterations apart per neuron, so its
-traces came within 2e-4 (relative) of the paper's, and its F1 within 0.006 at single thresholds (the best F1 of
-10 of its 11 settings unchanged).
+and background traces were the paper's bit for bit, but its NMF stopped at a different iteration for most
+neurons (a median of 2 iterations apart), so its traces came within 2e-4 (relative) of the paper's, and its F1
+within 0.006 at single thresholds (the best F1 of 10 of its 11 settings unchanged).
 
 The changes (``staging``) touch no numerics: the platform's paths, Python 3.10's shared memory, FISSA's cache
 folders, CaImAn's renamed calls, and CNMF's number of background components (1, as in the authors' released
