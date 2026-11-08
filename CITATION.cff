@@ -1,9 +1,10 @@
-# How to cite this software (GitHub's "Cite this repository"; read by Zenodo at a release). The paper's
-# citation (preferred-citation) will be added when it is published.
+# How to cite this software (GitHub's "Cite this repository"; read by Zenodo at a release). The authors below
+# are the software's; the paper, with its own authors, is the preferred citation (its journal, year and DOI to
+# come).
 cff-version: 1.2.0
-message: "If you use this software, please cite it as below."
+message: "If you use this software, please cite the paper below (its full citation is to come) and the software."
 type: software
-title: "ASTRID: Astrocyte-informed demixing of calcium imaging signals"
+title: "ASTRID: astrocyte-informed demixing of neuronal calcium traces"
 version: 0.1.0
 license: MIT    # except the folder reproduce/tuncat_eval/, which is GPL-2.0-only (see README.md)
 repository-code: "https://github.com/jameschengpeng/ASTRID"
@@ -23,27 +24,35 @@ authors:
   - given-names: James Cheng
     family-names: Peng
     affiliation: "Virginia Polytechnic Institute and State University; The Salk Institute for Biological Studies"
-  - given-names: Daniela
-    family-names: Duarte
-    affiliation: "The Salk Institute for Biological Studies"
-  - given-names: Katharina
-    family-names: Merten
-    affiliation: "The Salk Institute for Biological Studies"
-  - given-names: Mary Kaye
-    family-names: Duff
-    affiliation: "The Salk Institute for Biological Studies; University of California San Diego"
-  - given-names: Erin
-    family-names: Carey
-    affiliation: "The Salk Institute for Biological Studies"
-  - given-names: Yue
-    family-names: Wang
-    affiliation: "Virginia Polytechnic Institute and State University"
-  - given-names: Guoqiang
-    family-names: Yu
-    affiliation: "Tsinghua University"
-  - given-names: Axel
-    family-names: Nimmerjahn
-    affiliation: "The Salk Institute for Biological Studies"
-  - given-names: Yizhi
-    family-names: Wang
-    affiliation: "Virginia Polytechnic Institute and State University"
+preferred-citation:
+  type: article
+  status: in-preparation
+  title: "ASTRID: Astrocyte-informed demixing of calcium imaging signals"
+  authors:
+    - given-names: James Cheng
+      family-names: Peng
+      affiliation: "Virginia Polytechnic Institute and State University; The Salk Institute for Biological Studies"
+    - given-names: Daniela
+      family-names: Duarte
+      affiliation: "The Salk Institute for Biological Studies"
+    - given-names: Katharina
+      family-names: Merten
+      affiliation: "The Salk Institute for Biological Studies"
+    - given-names: Mary Kaye
+      family-names: Duff
+      affiliation: "The Salk Institute for Biological Studies; University of California San Diego"
+    - given-names: Erin
+      family-names: Carey
+      affiliation: "The Salk Institute for Biological Studies"
+    - given-names: Yue
+      family-names: Wang
+      affiliation: "Virginia Polytechnic Institute and State University"
+    - given-names: Guoqiang
+      family-names: Yu
+      affiliation: "Tsinghua University"
+    - given-names: Axel
+      family-names: Nimmerjahn
+      affiliation: "The Salk Institute for Biological Studies"
+    - given-names: Yizhi
+      family-names: Wang
+      affiliation: "Virginia Polytechnic Institute and State University"
