@@ -3,15 +3,16 @@
 This folder holds what is needed to rerun the paper's evaluation of ASTRID on its seven datasets, on top of the
 `astrid` package. **Status: draft.** The parts marked *to come* wait on the decisions noted there.
 
-Install the extra `reproduce` (pandas) with the package (`pip install -e ".[reproduce]"`) and run the modules
-from this folder (`python -m astrid_repro.<module> --help`). The peer methods (FISSA, TUnCaT, CaImAn, Suite2p)
+Install the extra `reproduce` (pandas, matplotlib) with the package (`pip install -e ".[reproduce]"`) and run
+the modules from this folder (`python -m astrid_repro.<module> --help`). The peer methods (FISSA, TUnCaT, CaImAn, Suite2p)
 are GPL and are not part of this repository: install them in an environment of their own.
 
 **Licenses.** Everything here is MIT, like the `astrid` package, except `tuncat_eval/`, which is GPL-2 (its own
 `LICENSE`). `tuncat_eval/` is the F1 scorer of D2, D4 and D5, a line-by-line port of the MATLAB evaluation code
 of TUnCaT (Bao et al. 2022, https://github.com/YijunBao/TUnCaT), which is GPL-2. A port keeps the license of the
 code it follows, so this folder keeps TUnCaT's license and is kept apart from the MIT code. The `astrid` package
-and `astrid_repro` never import it; it is handed to them at run time (below).
+and `astrid_repro` never import it; it is handed to them at run time (below), as the scorer of the tables and,
+scored ROI by ROI, to the example panels of Supplementary Fig. S4.
 
 ## What is here
 
@@ -23,7 +24,8 @@ and `astrid_repro` never import it; it is handed to them at run time (below).
 | `astrid_repro/suite2p_runner.py` | Suite2p's neuropil subtraction on given masks: whole videos (D2, D4, D5), cai-1 (D3) and exported cases |
 | `astrid_repro/stats.py` | the tables of D1 (ASTRID against seven methods), the ablations, D6 (its per-recording scoring and table) and D7 (by recording and by location) |
 | `astrid_repro/public_data.py`, `ring.py`, `cv.py`, `tables_public.py` | D2–D5: the readers of the public data and of their ground truth, the ring subtraction, the leave-one-out cross-validation over settings and detection thresholds, the tables |
-| `tuncat_eval/` (**GPL-2**) | the F1 scorer of D2, D4 and D5: TUnCaT's transient detection and matching, the ground-truth transients of the NAOMi videos, the template filtering, and the rule for CNMF results with removed components |
+| `astrid_repro/figures/` | the data panels of the paper's figures, drawn from the outputs above: Figure 4 (`cai1.py`) and Supplementary Figure S4 (`public.py`), with the rules that chose their examples (section "Figures" below) |
+| `tuncat_eval/` (**GPL-2**) | the F1 scorer of D2, D4 and D5: TUnCaT's transient detection and matching, the ground-truth transients of the NAOMi videos, the template filtering, the rule for CNMF results with removed components, and the same scoring ROI by ROI for the figures (`evaluation.view`) |
 | `../aqua2_settings/` | the AQuA2 settings that made the astrocyte territory of D1, D6 and D7 |
 
 **Checked against the analysis code that produced the paper's results.**
@@ -32,6 +34,9 @@ and `astrid_repro` never import it; it is handed to them at run time (below).
 - From the saved per-case scores and traces, every number of the paper's tables is recomputed exactly: D1, the
   ablations, D2–D5 with the cross-validation, D6 and D7.
 - The ROI detection gives the ROIs of the paper's D1 run.
+- The figure code draws Figure 4 and Supplementary Figure S4 with the values of the paper's figures: every point,
+  line, image, outline, band and text the paper's panels draw, compared one by one, and the examples, windows
+  and scores that their legends print.
 
 ## The route, per dataset
 
@@ -77,7 +82,8 @@ every method.
 5. **Statistics and tables.** The mean ± SD is taken over the units: the imaging locations on D1 and D6, the
    recordings on D7, the videos on D2, D4 and D5, the cells on D3. ASTRID is compared with each other method by a
    paired two-sided Wilcoxon signed-rank test, with Holm's correction over the comparisons of each measure
-   (`stats.py`, `tables_public.py`). *The figure scripts are to come.*
+   (`stats.py`, `tables_public.py`).
+6. **Figures**: below.
 
 ## Running ASTRID as in the paper
 
@@ -88,3 +94,38 @@ settings = astrid.Settings(tau_r=cfg["tau_r"], tau_d=cfg["tau_d"], **cfg["settin
 res = astrid.demix(movie, rois, fps=cfg["fps"], um_per_px=cfg["um_per_px"], territory=territory,
                    border_px=cfg["border_px"], settings=settings)
 ```
+
+## Figures
+
+`astrid_repro/figures` draws the data panels of the paper's figures from the outputs above, each with the values,
+examples, windows, marks and colors of the paper's figure, and saves each panel on its own
+(`<panel>_<dataset>_<part>.png` and `.svg`) with a record of what it shows (`.json`: the values drawn, the
+example and the numbers its legend prints). The schematics (Fig. 1A and 1D, 2A, 3A, 5A) and the paper's
+typography, panel sizes and page layout are not part of it: the panels are drawn with matplotlib's defaults.
+Run from this folder:
+
+```bash
+# Figure 4 (D3): A, the correlation per cell; B, the example
+python -m astrid_repro.figures cai1 --table <tables>/cv_cai1.json --export <D3 export> --ours <root> [...]     --peers <folder> --suite2p <root> --out <figures>
+# Supplementary Figure S4, one row per dataset: D2 (ABO: A, B), D4 (NAOMi: C, D), D5 (1p: E, F)
+python -m astrid_repro.figures public --dataset ABO --table <tables>/cv_ABO.json --archive <TUnCaT archive>     --ours <root> [...] --peers <root> [...] --suite2p <root>     --evaluator tuncat_eval.evaluation:view --cnmf-fill tuncat_eval.evaluation:cnmf_fill --out <figures>
+```
+
+The tables are those `tables_public` writes; the other paths are those given to it.
+
+| Paper panel | Shows | Code |
+|---|---|---|
+| Fig. 4A | D3: each method's correlation with the spike-predicted calcium per cell, GCaMP6f and GCaMP6s cells marked, the Holm-corrected marks | `cai1.draw_scores` |
+| Fig. 4B | D3: the example recording's mean image and ROI, and each method's standardized trace over the predicted calcium, with the spikes | `cai1.example`, `cai1.draw_image`, `cai1.draw_traces` |
+| Supp. Fig. S4A, C, E | D2, D4, D5: each method's F1 per video, the Holm-corrected marks | `public.draw_scores` |
+| Supp. Fig. S4B, D, F | D2, D4, D5: the example video's mean image and ROI masks, and the example ROI's trace as the evaluation sees it, with the labeled or simulated transients and each method's detections | `public.example`, `public.draw_image`, `public.draw_traces` |
+| Figs. 1-3, 5, 6; Supp. Figs. S1-S3 | D1, D6, D7 | *to come with the release of these datasets* |
+
+**Example rules** (Supplementary Section "Example panels"; each module's docstring gives the rule in full):
+
+- Fig. 4B: the cell on which ASTRID's correlation is furthest above the best other method's, its recording on
+  which ASTRID is furthest ahead, and the 30 s within the electrophysiology where the methods' standardized
+  traces differ most.
+- Supp. Fig. S4B, D, F: the video with ASTRID's median F1; among its ROIs with at least 8 labeled or simulated
+  transients and an ASTRID F1 of at least 0.5, the ROI on which ASTRID's F1 is furthest above the best other
+  method's; the 120 s (or the whole recording) with the most transients on which the methods disagree.

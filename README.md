@@ -220,11 +220,13 @@ process, e.g. `OMP_NUM_THREADS=1`).
 
 ## Reproducing the paper
 
-See [`reproduce/README.md`](reproduce/README.md).
+See [`reproduce/README.md`](reproduce/README.md): the paper's evaluation on its seven datasets, its tables, and
+the code that draws the data panels of its figures.
 
 ## License
 
 MIT (see `LICENSE`), except one folder of the reproduction code: `reproduce/tuncat_eval/`, the paper's F1
-scorer of D2, D4 and D5, is a line-by-line port of TUnCaT's GPL-2 MATLAB evaluation, so it keeps TUnCaT's
-license (GPL-2, its own `LICENSE`). The `astrid` package never imports it. AQuA2, CASCADE, the peer methods
+scorer of D2, D4 and D5 (and its per-ROI view, drawn in Supplementary Fig. S4), is a line-by-line port of
+TUnCaT's GPL-2 MATLAB evaluation, so it keeps TUnCaT's license (GPL-2, its own `LICENSE`). The `astrid`
+package and the MIT reproduction code never import it. AQuA2, CASCADE, the peer methods
 used in the paper's benchmark, and their data are not included and keep their own licenses.

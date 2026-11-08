@@ -11,6 +11,8 @@
 - ``cnmf_fill(mat, masks)``: ``eval_NAOMi_CNMF.m``'s rule for a CNMF result in which CaImAn removed components
   (``--cnmf-fill tuncat_eval.evaluation:cnmf_fill``). The missing neurons are found by walking the Jaccard
   distance between the masks and the thresholded footprints down the diagonal, and get all-zero traces.
+- ``view(dataset, video, archive)``: the same scoring ROI by ROI (``View``), what the example panels of
+  Supplementary Fig. S4 draw (``astrid_repro.figures public --evaluator tuncat_eval.evaluation:view``).
 """
 
 from __future__ import annotations
@@ -87,6 +89,52 @@ def scorer(dataset: str, video: str, archive: str | Path) -> Scorer:
         kernel = naomi_kernel(a / "template" / NAOMI_TEMPLATE)
         return Scorer(naomi_labels(a, video, kernel), kernel)
     raise ValueError(f"no transient scorer for {dataset!r} (D3 is scored by correlation)")
+
+
+class View:
+    """One video's scoring ROI by ROI at one threshold, as the example panels show it: ``(traces, threshold)
+    -> dict`` with
+    - ``z``: each trace as the evaluation sees it, template-filtered, minus its baseline, over its noise (n, T');
+    - ``truth``: per ROI, the ground-truth transients as (m, 2) 0-based inclusive frames, None if unlabelled;
+    - ``detections``: per ROI, the detected transients (m, 2), 0-based inclusive frames of ``z``;
+    - ``truth_matched``, ``detection_matched``: per ROI, which of them are matched (``transients.matched``);
+    - ``roi_f1``: per ROI, the F1 of its own transients (NaN if unlabelled; 0 if nothing is matched);
+    - ``video_f1``: the F1 pooled over the labelled ROIs, the video's score in the tables (``Scorer``)."""
+
+    def __init__(self, labels: list[np.ndarray | None], kernel: np.ndarray | None) -> None:
+        self.labels, self.kernel = labels, kernel
+
+    def __call__(self, x: np.ndarray, threshold: float) -> dict[str, Any]:
+        y = tr.filtered(x, self.kernel)
+        mu, sigma = tr.baselines(y), tr.noise_psd(y)
+        video_f1 = tr.score(y, self.labels, float(threshold), mu=mu, sigma=sigma).f1
+        truth: list[np.ndarray | None] = []
+        dets, g_ok, d_ok = [], [], []
+        roi_f1 = np.full(len(self.labels), np.nan)
+        for i, lab in enumerate(self.labels):
+            det = tr.detect(y[i], float(mu[i]), float(sigma[i]), float(threshold))
+            dets.append(det)
+            if lab is None or lab.size == 0:
+                truth.append(None)
+                g_ok.append(np.zeros(0, dtype=bool))
+                d_ok.append(np.zeros(len(det), dtype=bool))
+                continue
+            gt = np.asarray(lab)
+            gt = gt[gt[:, 2].astype(bool), :2].astype(int) - 1          # valid only; to 0-based
+            g, d = tr.matched(gt, det)
+            truth.append(gt)
+            g_ok.append(g)
+            d_ok.append(d)
+            rec, pre = (g.mean() if g.size else 0.0), (d.mean() if d.size else 0.0)
+            roi_f1[i] = 2 * rec * pre / (rec + pre) if rec and pre else 0.0
+        return {"z": (y - mu[:, None]) / sigma[:, None], "truth": truth, "detections": dets,
+                "truth_matched": g_ok, "detection_matched": d_ok, "roi_f1": roi_f1, "video_f1": float(video_f1)}
+
+
+def view(dataset: str, video: str, archive: str | Path) -> View:
+    """The per-ROI scoring of one video of ``dataset`` (``View``), with ``scorer``'s labels and template."""
+    s = scorer(dataset, video, archive)
+    return View(s.labels, s.kernel)
 
 
 def cnmf_fill_missing(m: dict[str, Any], masks: np.ndarray) -> tuple[np.ndarray, list[int]]:

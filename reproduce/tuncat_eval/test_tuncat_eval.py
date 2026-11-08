@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -69,6 +70,23 @@ def test_scorer_interface() -> None:
     labels: list[np.ndarray | None] = [labels_for() for _ in range(2)]
     rec, pre, f1, n_neurons, n_gt = ev.Scorer(labels, None)(x, np.array([30.0, 5000.0]))
     assert f1[0] == 1.0 and f1[1] == 0.0 and n_neurons == 2 and n_gt == 4    # 5000 s.d.: above every peak
+
+
+def test_view_agrees_with_the_scorer() -> None:
+    """The per-ROI view: its video F1 is the scorer's, its matches are ``match``'s counts, and a ROI's F1 is the
+    pooled F1 of that ROI alone."""
+    x = np.stack([trace_with(seed=0), trace_with((215, 600, 925), seed=1), trace_with(seed=2)])
+    labels: list[np.ndarray | None] = [labels_for(), labels_for((215,)), None]       # ROI 2: one false detection
+    v = ev.View(labels, None)(x, 30.0)
+    assert v["video_f1"] == ev.Scorer(labels, None)(x, np.array([30.0]))[2][0]
+    assert v["truth"][2] is None and np.isnan(v["roi_f1"][2]) and len(v["detections"][2]) == 2
+    for i in (0, 1):
+        g, d = v["truth_matched"][i], v["detection_matched"][i]
+        assert (g.sum(), d.sum()) == tr.match(v["truth"][i], v["detections"][i])
+        alone: list[np.ndarray | None] = [lab if j == i else None for j, lab in enumerate(labels)]
+        assert v["roi_f1"][i] == tr.score(x, alone, 30.0).f1
+    assert v["roi_f1"][0] == 1.0 and v["roi_f1"][1] == pytest.approx(0.5)         # recall 1, precision 1/3
+    np.testing.assert_array_equal(v["z"], (x - tr.baselines(x)[:, None]) / tr.noise_psd(x)[:, None])
 
 
 def test_cnmf_fill() -> None:

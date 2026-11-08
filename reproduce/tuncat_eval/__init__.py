@@ -7,7 +7,8 @@ Frontiers in Neuroscience 15:797421 (2022); https://github.com/YijunBao/TUnCaT),
 A port of GPL-2 code keeps that license, so this folder is GPL-2 and is kept apart from the rest of the
 repository. The ``astrid`` package and ``reproduce/astrid_repro`` are MIT and never import it: the scorer is
 handed to them at run time (``astrid_repro.tables_public grids --scorer tuncat_eval.evaluation:scorer
---cnmf-fill tuncat_eval.evaluation:cnmf_fill``).
+--cnmf-fill tuncat_eval.evaluation:cnmf_fill``), and so is its per-ROI view, which the example panels of
+Supplementary Fig. S4 draw (``astrid_repro.figures public --evaluator tuncat_eval.evaluation:view``).
 
 Ported (``transients.py``, ``evaluation.py``), each with the TUnCaT file it follows:
 - ``evaluation/GetPerformance_SpikeDetection_split.m``, ``SNR_normalization.m`` and ``noise_PSD.m``: the

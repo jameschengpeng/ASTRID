@@ -104,6 +104,20 @@ def match(gt: np.ndarray, det: np.ndarray) -> tuple[int, int]:
     return int(ok.sum()), int(ok.sum())
 
 
+def matched(gt: np.ndarray, det: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Which ground-truth and which detected transients ``match`` pairs, as two boolean arrays: the same
+    Hungarian assignment on frame overlap (zero overlap never matches)."""
+    g, d = np.zeros(len(gt), dtype=bool), np.zeros(len(det), dtype=bool)
+    if gt.size and det.size:
+        lo = np.maximum(gt[:, None, 0], det[None, :, 0])
+        hi = np.minimum(gt[:, None, 1], det[None, :, 1])
+        overlap = np.clip(hi - lo + 1, 0, None)
+        r, c = linear_sum_assignment(np.where(overlap > 0, -overlap.astype(float), 1e9))
+        ok = overlap[r, c] > 0
+        g[r[ok]], d[c[ok]] = True, True
+    return g, d
+
+
 @dataclass
 class Score:
     recall: float
