@@ -1,0 +1,49 @@
+# How to cite this software (GitHub's "Cite this repository"; read by Zenodo at a release). The paper's
+# citation (preferred-citation) will be added when it is published.
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "ASTRID: Astrocyte-informed demixing of calcium imaging signals"
+version: 0.1.0
+license: MIT    # except the folder reproduce/tuncat_eval/, which is GPL-2.0-only (see README.md)
+repository-code: "https://github.com/jameschengpeng/ASTRID"
+keywords:
+  - calcium imaging
+  - demixing
+  - astrocytes
+  - neuropil
+  - two-photon
+  - one-photon
+abstract: >-
+  ASTRID (ASTRocyte-Informed Demixing) demixes the calcium traces of neuronal ROIs in imaging where neurons
+  and astrocytes share one fluorescence channel. For each ROI, it fits a model of the patch of pixels around
+  it, with the neuron's own signal, the neighboring neurons, astrocyte components placed on astrocyte
+  territory, and the local neuropil.
+authors:
+  - given-names: James Cheng
+    family-names: Peng
+    affiliation: "Virginia Polytechnic Institute and State University; The Salk Institute for Biological Studies"
+  - given-names: Daniela
+    family-names: Duarte
+    affiliation: "The Salk Institute for Biological Studies"
+  - given-names: Katharina
+    family-names: Merten
+    affiliation: "The Salk Institute for Biological Studies"
+  - given-names: Mary Kaye
+    family-names: Duff
+    affiliation: "The Salk Institute for Biological Studies; University of California San Diego"
+  - given-names: Erin
+    family-names: Carey
+    affiliation: "The Salk Institute for Biological Studies"
+  - given-names: Yue
+    family-names: Wang
+    affiliation: "Virginia Polytechnic Institute and State University"
+  - given-names: Guoqiang
+    family-names: Yu
+    affiliation: "Tsinghua University"
+  - given-names: Axel
+    family-names: Nimmerjahn
+    affiliation: "The Salk Institute for Biological Studies"
+  - given-names: Yizhi
+    family-names: Wang
+    affiliation: "Virginia Polytechnic Institute and State University"

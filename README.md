@@ -102,7 +102,8 @@ out: astrid_out
   converted with the pixel size; time scales (baseline, noise band, kernel, astrocyte prior) in seconds.
 - **`tau_r`, `tau_d`**: the rise and decay time constants (s) of the indicator's impulse response. They have
   no default, because they depend on the indicator. The paper used 0.045 and 0.142 s for GCaMP6f, 0.179
-  and 0.550 s for GCaMP6s, and 0.05 and 0.4 s for its GCaMP6m recordings.
+  and 0.550 s for GCaMP6s, and 0.05 and 0.4 s on D1 (GCaMP6m) and D6 (jRGECO1a). On D7 they were estimated
+  from the recordings (`reproduce/datasets.yaml`).
 - **`territory`** (optional): astrocyte territory as an (H, W) map or (m, H, W) masks, from any source. In
   each patch, the up to three largest regions of territory (at least 80 µm²) become astrocyte components.
   Without territory there are no astrocyte components.
@@ -123,7 +124,7 @@ out: astrid_out
 | `dff__<rec>` | (n, T) | the demixed trace as ΔF/F0 (ΔF over the ROI average of the baseline F0) |
 | `delta_f__<rec>` | (n, T) | the demixed trace in fluorescence units: the ROI average of the baseline-subtracted movie minus the fitted contributions of every other component (the residual is kept) |
 | `baseline__<rec>` | (n, T) | the ROI average of F0 |
-| `ring__<rec>` | (n, T) | the ring subtraction for comparison, ROI mean − 0.7 × ring mean (4–16 µm out), fluorescence units |
+| `ring__<rec>` | (n, T) | the ring subtraction for comparison: the ROI mean − 0.7 × the mean of a ring 4–16 µm outside the ROI that leaves out the pixels of every ROI and candidate, both of the baseline-subtracted movie (fluorescence units) |
 | `fitted`, `converged`, `iterations`, `stop`, `error` | (n,) | the fit's outcome; a fit that fails is recorded and the others go on |
 | `n_neighbours`, `n_unclassified`, `n_astro`, `pixels`, `seconds` | (n,) | the patch's components and size, and the time |
 
@@ -149,7 +150,7 @@ Supplementary Table of default settings.
 | Setting | Default | Meaning | Name in the analysis code |
 |---|---|---|---|
 | `kappa_d` | 2 | drive: the height, in noise s.d., a transient must reach before any drive is assigned to it | `kappa_s` |
-| `kappa_a` | 10 | astrocytes: a cosine coefficient above 2 f_a shrinks by 1/(1 + κ_a) | `kappa_a` |
+| `kappa_a` | 10 | astrocytes: at the reference starting point, a cosine coefficient above 2 f_a shrinks by 1/(1 + κ_a) | `kappa_a` |
 | `kappa_np` | 0.1 | neuropil: smoothness of its footprint | `kappa_b` |
 | `kappa_rho` | 1 | evidence: astrocyte footprint on weak structural evidence | `kappa_t` |
 | `f_a` | 0.2 Hz | cutoff of the astrocytes' low-frequency prior | `f_a` |
@@ -192,7 +193,9 @@ The steps (`astrid/detection.py`):
 - **Proposals.** SynQuant (Wang et al. 2020) proposes candidate ROIs on each recording's maximum and mean
   projections and on a map of its fast activity (0.2–5 Hz). Pixels at the image edge and in the recording's
   AQuA2 astrocyte mask are removed.
-- **Acceptance.** A candidate is accepted if its average trace looks like an active neuron.
+- **Acceptance.** A candidate is accepted if its average trace, smoothed with a Gaussian kernel of SD 6
+  frames, rises above a moving 6-s baseline by at least 3 times its noise level and to a ΔF/F0 of at least
+  50%, and its longest period above a ΔF/F0 of 10% lasts at most 5 s.
 - **Merging.** The ROIs of a location's recordings are merged into one set.
 
 `astrid detect` does the same from the command line.
@@ -222,6 +225,15 @@ process, e.g. `OMP_NUM_THREADS=1`).
 
 See [`reproduce/README.md`](reproduce/README.md): the paper's evaluation on its seven datasets, its tables, and
 the code that draws the data panels of its figures.
+
+- **From public data alone:** D2, D4 and D5 (the Allen Brain Observatory, NAOMi and one-photon datasets), from
+  the methods' traces to their tables and their figures (Supplementary Fig. S4).
+- **D3** (CRCNS cai-1): its tables and figure (Fig. 4) are computed here from the export that every method read,
+  the registered movies binned 4 × 4 with the ROI drawn by hand on each cell. The builder of that export and
+  the ROI masks are to come.
+- **With the authors' recordings:** D1, D6 and D7, whose availability is to be announced. Their settings, the
+  statistics of their tables and the ROI detection are here; the builders of their injection and leakage tests
+  and their figures will follow with the data.
 
 ## License
 

@@ -48,7 +48,9 @@ every method.
    - D2–D5 are public. D2 is the Allen Brain Observatory videos (AllenSDK) with TUnCaT's manual masks and
      transient labels. D4 and D5 are TUnCaT's NAOMi and one-photon videos with their labels. TUnCaT's data are on
      figshare, linked from its repository, https://github.com/YijunBao/TUnCaT. D3 is the CRCNS cai-1 dataset
-     (https://crcns.org, a free account).
+     (https://crcns.org, a free account). Every method read one export of D3: per recording, the registered
+     movie binned 4 × 4, the ROI drawn by hand on the cell, the scored frames and the spike-predicted calcium
+     (`public_data.py`). *The builder of this export and the ROI masks are to come.*
    - D1, D6 and D7 were recorded by the authors: *their availability is to be announced.*
 2. **ASTRID** on each case with `astrid.demix` and the settings of `datasets.yaml`.
    - The baseline F0 of each pixel is, by default, the 10th percentile of its 1-s means in a moving 60-s window
