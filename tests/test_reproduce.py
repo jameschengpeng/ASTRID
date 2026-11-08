@@ -48,8 +48,10 @@ def test_measures() -> None:
     assert p == {"a": 0.03, "c": 0.06, "b": 0.06}
 
 
-def test_mit_code_never_imports_the_gpl_scorer() -> None:
-    """reproduce/tuncat_eval is GPL-2 (a port of TUnCaT's evaluation): no MIT file may import it."""
+def test_mit_code_never_imports_the_gpl_folders() -> None:
+    """reproduce/tuncat_eval and reproduce/tuncat_peers are GPL-2 (TUnCaT's evaluation, ported; the staging of
+    its archive's scripts): no MIT file may import them."""
     for path in [*(ROOT / "src").rglob("*.py"), *(ROOT / "reproduce" / "astrid_repro").rglob("*.py")]:
         text = path.read_text(encoding="utf-8")
-        assert "import tuncat_eval" not in text and "from tuncat_eval" not in text, path
+        for name in ("tuncat_eval", "tuncat_peers"):
+            assert f"import {name}" not in text and f"from {name}" not in text, path

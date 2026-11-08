@@ -6,7 +6,7 @@ message: "If you use this software, please cite the paper below (its full citati
 type: software
 title: "ASTRID: astrocyte-informed demixing of neuronal calcium traces"
 version: 0.1.0
-license: MIT    # except the folder reproduce/tuncat_eval/, which is GPL-2.0-only (see README.md)
+license: MIT    # except the folders reproduce/tuncat_eval/ and reproduce/tuncat_peers/, GPL-2.0-only (README.md)
 repository-code: "https://github.com/jameschengpeng/ASTRID"
 keywords:
   - calcium imaging

@@ -7,12 +7,15 @@ Install the extra `reproduce` (pandas, matplotlib) with the package (`pip instal
 the modules from this folder (`python -m astrid_repro.<module> --help`). The peer methods (FISSA, TUnCaT, CaImAn, Suite2p)
 are GPL and are not part of this repository: install them in an environment of their own.
 
-**Licenses.** Everything here is MIT, like the `astrid` package, except `tuncat_eval/`, which is GPL-2 (its own
-`LICENSE`). `tuncat_eval/` is the F1 scorer of D2, D4 and D5, a line-by-line port of the MATLAB evaluation code
-of TUnCaT (Bao et al. 2022, https://github.com/YijunBao/TUnCaT), which is GPL-2. A port keeps the license of the
-code it follows, so this folder keeps TUnCaT's license and is kept apart from the MIT code. The `astrid` package
-and `astrid_repro` never import it; it is handed to them at run time (below), as the scorer of the tables and,
-scored ROI by ROI, to the example panels of Supplementary Fig. S4.
+**Licenses.** Everything here is MIT, like the `astrid` package, except two folders that are GPL-2, each with
+its own `LICENSE`, because they derive from the GPL-2 code of TUnCaT (Bao et al. 2022,
+https://github.com/YijunBao/TUnCaT):
+- `tuncat_eval/`, the F1 scorer of D2, D4 and D5, a line-by-line port of TUnCaT's MATLAB evaluation code. The
+  `astrid` package and `astrid_repro` never import it; it is handed to them at run time (below), as the scorer of
+  the tables and, scored ROI by ROI, to the example panels of Supplementary Fig. S4;
+- `tuncat_peers/`, which stages the scripts of TUnCaT's paper-reproduction archive with the changes the paper's
+  runs made to them and runs FISSA, TUnCaT and CNMF on D2, D4 and D5 (`python -m tuncat_peers`).
+A port or a change of GPL-2 code keeps its license, so these folders are kept apart from the MIT code.
 
 ## What is here
 
@@ -20,6 +23,8 @@ scored ROI by ROI, to the example panels of Supplementary Fig. S4.
 |---|---|
 | `datasets.yaml` | ASTRID's inputs and settings on each dataset as they were run: frame rate, pixel size, time constants, border, territory, evidence map, candidates, the cross-validation grids of D2–D5, D7's baseline, the iteration limits |
 | `astrid_repro/metrics.py` | the measures: the injection test's error (below 0.5 Hz), the leakage, the gain, the failure rule; the paired Wilcoxon signed-rank test and Holm's correction |
+| `astrid_repro/run.py` | ASTRID on D2–D5 as the paper ran it: every video at every setting of the dataset's grid (`python -m astrid_repro.run D2 --data <archive> --out <results>`) |
+| `astrid_repro/abo_crop.py` | D2's movies: the URLs of the ten public Allen movies and TUnCaT's crop of them (the first 20 % of frames, the central 200 × 200 pixels) |
 | `astrid_repro/peers.py` | FISSA, TUnCaT and TUnCaT + terr., CNMF and CNMF + terr. (CaImAn) on the exported cases of D1, D6 and D7, at the paper's settings |
 | `astrid_repro/cai1_peers.py` | FISSA, TUnCaT and CNMF (CaImAn) on the recordings of D3's export, at the paper's settings |
 | `astrid_repro/suite2p_runner.py` | Suite2p's neuropil subtraction on given masks: whole videos (D2, D4, D5), cai-1 (D3) and exported cases |
@@ -27,6 +32,7 @@ scored ROI by ROI, to the example panels of Supplementary Fig. S4.
 | `astrid_repro/stats.py` | the tables of D1 (ASTRID against seven methods), the ablations, D6 (its per-recording scoring and table) and D7 (by recording and by location) |
 | `astrid_repro/public_data.py`, `ring.py`, `cv.py`, `tables_public.py` | D2–D5: the readers of the public data and of their ground truth, the ring subtraction, the leave-one-out cross-validation over settings and detection thresholds, the tables |
 | `astrid_repro/figures/` | the data panels of the paper's figures, drawn from the outputs above: Figure 4 (`cai1.py`) and Supplementary Figure S4 (`public.py`), with the rules that chose their examples (section "Figures" below) |
+| `tuncat_peers/` (**GPL-2**) | FISSA, TUnCaT and CNMF on D2, D4 and D5 with the scripts of TUnCaT's paper-reproduction archive, staged with the paper's changes (CNMF with one background component), and the record of those changes |
 | `tuncat_eval/` (**GPL-2**) | the F1 scorer of D2, D4 and D5: TUnCaT's transient detection and matching, the ground-truth transients of the NAOMi videos, the template filtering, the rule for CNMF results with removed components, and the same scoring ROI by ROI for the figures (`evaluation.view`) |
 | `../aqua2_settings/` | the AQuA2 settings that made the astrocyte territory of D1, D6 and D7 |
 
@@ -47,8 +53,9 @@ margin left by registration, were not used as cases, and the pixels of this marg
 every method.
 
 1. **Inputs.**
-   - D2–D5 are public. D2 is the Allen Brain Observatory videos (AllenSDK) with TUnCaT's manual masks and
-     transient labels. D4 and D5 are TUnCaT's NAOMi and one-photon videos with their labels. TUnCaT's data are on
+   - D2–D5 are public. D2 is ten Allen Brain Observatory experiments, cropped as TUnCaT cropped them
+     (`abo_crop.py`, from the public movies, about 60 GB each), with TUnCaT's manual masks and transient labels.
+     D4 and D5 are TUnCaT's NAOMi and one-photon videos with their labels. TUnCaT's data are on
      figshare, linked from its repository, https://github.com/YijunBao/TUnCaT. D3 is the CRCNS cai-1 dataset
      (https://crcns.org, a free account). Every method read one export of D3: per recording, the registered
      movie binned 4 × 4, the ROI drawn by hand on the cell, the scored frames and the spike-predicted calcium
@@ -60,12 +67,13 @@ every method.
      (D7's own rule is in `datasets.yaml`).
    - The fits were allowed at most 600 iterations, the default, except in the leakage tests of D1 and D7, where
      they were allowed at most 2,000.
-   - On D2–D5, every (kappa_d, kappa_np) pair of the dataset's grid is run on every video. Leave-one-video-out
-     cross-validation (leave-one-cell-out on D3) then picks the setting that is applied to each held-out video
-     (`cv.py`).
+   - On D2–D5, every (kappa_d, kappa_np) pair of the dataset's grid is run on every video (`run.py`, into the
+     layout `tables_public` reads). Leave-one-video-out cross-validation (leave-one-cell-out on D3) then picks
+     the setting that is applied to each held-out video (`cv.py`).
 3. **Peer methods**, with their authors' code (`peers.py` on D1, D6 and D7, `cai1_peers.py` on D3,
-   `suite2p_runner.py`; on D2, D4 and D5, the scripts of TUnCaT's authors, rerun for the paper; the traces
-   they released, in TUnCaT's archive, match the reruns closely but, for CNMF, not exactly):
+   `tuncat_peers` on D2, D4 and D5, `suite2p_runner.py`). On D2, D4 and D5, the paper reran the scripts of
+   TUnCaT's paper-reproduction archive (`tuncat_peers`); the traces those scripts' authors released, in
+   TUnCaT's archive, match the reruns closely but, for CNMF, not exactly, so they are a close second route:
    - FISSA 1.0.0;
    - TUnCaT, its paper's v1.0 scripts;
    - CNMF in CaImAn 1.13.2, seeded with the masks;
@@ -93,6 +101,14 @@ every method.
 6. **Figures**: below.
 
 ## Running ASTRID as in the paper
+
+On D2–D5, the runner does every fit of the paper (on D3, after `cai1_export`):
+
+```bash
+python -m astrid_repro.run D3 --data <D3 export> --out <results> --workers 8      # 58 recordings x 19 settings
+```
+
+On one case, with a dataset's settings:
 
 ```python
 import yaml, astrid

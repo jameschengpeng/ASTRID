@@ -41,7 +41,7 @@ version = { attr = "astrid.__version__" }
 where = ["src"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "reproduce/tuncat_eval"]
+testpaths = ["tests", "reproduce/tuncat_eval", "reproduce/tuncat_peers"]
 markers = ["slow: a full fit on a synthetic movie (seconds)"]
 
 [tool.ruff]
