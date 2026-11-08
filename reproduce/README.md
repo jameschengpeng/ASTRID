@@ -73,7 +73,10 @@ every method.
 3. **Peer methods**, with their authors' code (`peers.py` on D1, D6 and D7, `cai1_peers.py` on D3,
    `tuncat_peers` on D2, D4 and D5, `suite2p_runner.py`). On D2, D4 and D5, the paper reran the scripts of
    TUnCaT's paper-reproduction archive (`tuncat_peers`); the traces those scripts' authors released, in
-   TUnCaT's archive, match the reruns closely but, for CNMF, not exactly, so they are a close second route:
+   TUnCaT's archive, match the reruns closely but, for CNMF, not exactly, so they are a close second route. A
+   rerun through `tuncat_peers` in the paper's environments gives FISSA's and CNMF's traces of the paper bit for
+   bit; TUnCaT's unmixing is not deterministic from run to run, so its traces come within about 2e-4 of the
+   paper's and its F1 within about 0.006 at single thresholds (`tuncat_peers/__init__.py`):
    - FISSA 1.0.0;
    - TUnCaT, its paper's v1.0 scripts;
    - CNMF in CaImAn 1.13.2, seeded with the masks;
