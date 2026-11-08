@@ -226,11 +226,10 @@ process, e.g. `OMP_NUM_THREADS=1`).
 See [`reproduce/README.md`](reproduce/README.md): the paper's evaluation on its seven datasets, its tables, and
 the code that draws the data panels of its figures.
 
-- **From public data alone:** D2, D4 and D5 (the Allen Brain Observatory, NAOMi and one-photon datasets), from
-  the methods' traces to their tables and their figures (Supplementary Fig. S4).
-- **D3** (CRCNS cai-1): its tables and figure (Fig. 4) are computed here from the export that every method read,
-  the registered movies binned 4 × 4 with the ROI drawn by hand on each cell. The builder of that export and
-  the ROI masks are to come.
+- **From public data alone:** D2–D5 (the Allen Brain Observatory, CRCNS cai-1, NAOMi and one-photon datasets),
+  from the methods' traces to their tables and their figures (Fig. 4 and Supplementary Fig. S4). For D3, the
+  export every method read is built from the CRCNS download, with the ROI of each cell from
+  `reproduce/cai1_rois`, drawn by hand once, blind to all methods (the dataset ships none).
 - **With the authors' recordings:** D1, D6 and D7, whose availability is to be announced. Their settings, the
   statistics of their tables and the ROI detection are here; the builders of their injection and leakage tests
   and their figures will follow with the data.

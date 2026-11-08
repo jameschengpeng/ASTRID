@@ -21,7 +21,9 @@ scored ROI by ROI, to the example panels of Supplementary Fig. S4.
 | `datasets.yaml` | ASTRID's inputs and settings on each dataset as they were run: frame rate, pixel size, time constants, border, territory, evidence map, candidates, the cross-validation grids of D2–D5, D7's baseline, the iteration limits |
 | `astrid_repro/metrics.py` | the measures: the injection test's error (below 0.5 Hz), the leakage, the gain, the failure rule; the paired Wilcoxon signed-rank test and Holm's correction |
 | `astrid_repro/peers.py` | FISSA, TUnCaT and TUnCaT + terr., CNMF and CNMF + terr. (CaImAn) on the exported cases of D1, D6 and D7, at the paper's settings |
+| `astrid_repro/cai1_peers.py` | FISSA, TUnCaT and CNMF (CaImAn) on the recordings of D3's export, at the paper's settings |
 | `astrid_repro/suite2p_runner.py` | Suite2p's neuropil subtraction on given masks: whole videos (D2, D4, D5), cai-1 (D3) and exported cases |
+| `astrid_repro/cai1_export.py`, `cai1_rois/` | D3: the export every method read, built from the CRCNS download (the frames placed on the processed traces' grid, rigid registration, 4 × 4 binning, the scored frames, the spike-predicted calcium), with the ROI of each cell, drawn by hand once, blind to all methods |
 | `astrid_repro/stats.py` | the tables of D1 (ASTRID against seven methods), the ablations, D6 (its per-recording scoring and table) and D7 (by recording and by location) |
 | `astrid_repro/public_data.py`, `ring.py`, `cv.py`, `tables_public.py` | D2–D5: the readers of the public data and of their ground truth, the ring subtraction, the leave-one-out cross-validation over settings and detection thresholds, the tables |
 | `astrid_repro/figures/` | the data panels of the paper's figures, drawn from the outputs above: Figure 4 (`cai1.py`) and Supplementary Figure S4 (`public.py`), with the rules that chose their examples (section "Figures" below) |
@@ -50,7 +52,8 @@ every method.
      figshare, linked from its repository, https://github.com/YijunBao/TUnCaT. D3 is the CRCNS cai-1 dataset
      (https://crcns.org, a free account). Every method read one export of D3: per recording, the registered
      movie binned 4 × 4, the ROI drawn by hand on the cell, the scored frames and the spike-predicted calcium
-     (`public_data.py`). *The builder of this export and the ROI masks are to come.*
+     (`public_data.py`). `cai1_export.py` builds it from the CRCNS download, with the masks of `cai1_rois/`
+     (the dataset ships none).
    - D1, D6 and D7 were recorded by the authors: *their availability is to be announced.*
 2. **ASTRID** on each case with `astrid.demix` and the settings of `datasets.yaml`.
    - The baseline F0 of each pixel is, by default, the 10th percentile of its 1-s means in a moving 60-s window
@@ -60,7 +63,9 @@ every method.
    - On D2–D5, every (kappa_d, kappa_np) pair of the dataset's grid is run on every video. Leave-one-video-out
      cross-validation (leave-one-cell-out on D3) then picks the setting that is applied to each held-out video
      (`cv.py`).
-3. **Peer methods**, with their authors' code (`peers.py`, `suite2p_runner.py`):
+3. **Peer methods**, with their authors' code (`peers.py` on D1, D6 and D7, `cai1_peers.py` on D3,
+   `suite2p_runner.py`; on D2, D4 and D5, the scripts of TUnCaT's authors, rerun for the paper; the traces
+   they released, in TUnCaT's archive, match the reruns closely but, for CNMF, not exactly):
    - FISSA 1.0.0;
    - TUnCaT, its paper's v1.0 scripts;
    - CNMF in CaImAn 1.13.2, seeded with the masks;

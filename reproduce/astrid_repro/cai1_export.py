@@ -260,8 +260,8 @@ def export_recording(r: Recording, rois: str | Path, out: str | Path) -> dict[st
     valid = present & (t_frame >= te[0]) & (t_frame <= te[-1])
     max_shift = int(np.abs(shifts).max())
     with h5py.File(out / f"{r.name}.h5", "w") as f:
-        f.create_dataset("mov", data=np.rint(mov).astype(np.int16), chunks=(256, *mov.shape[1:]),
-                         compression="gzip", compression_opts=1)
+        f.create_dataset("mov", data=np.rint(mov).astype(np.int16),                # chunks of 256 frames
+                         chunks=(min(256, mov.shape[0]), *mov.shape[1:]), compression="gzip", compression_opts=1)
         f.create_dataset("valid", data=valid)
         f.create_dataset("frame_present", data=present)
         f.create_dataset("shifts", data=shifts)
