@@ -20,7 +20,10 @@ numerics:
   of its unused imports no longer exist, numpy 2 has no ``np.int`` and ``np.bool``, and ``fit()`` now works in
   place (returns None): five lines rewritten;
 - ``cnmf_gnb``: that many background components instead of the script's 2. The CNMF traces the authors
-  released hold one, and the paper's runs used one.
+  released hold one, and the paper's runs used one;
+- ``cnmf_p``: the order of the autoregressive model instead of the script's 1, for the cross-validation of
+  CNMF's settings (gnb 1, 2, 3 × p 1, 2; the script names its output folder after it, ``traces_CNMF_<video>_p<p>``).
+  At p 1 the script is left as it is.
 """
 
 from __future__ import annotations
@@ -107,3 +110,10 @@ def cnmf_gnb(s: str, n: int) -> str:
     if s.count("'gnb': 2,") != 1:
         raise ValueError("the script's gnb line not found")
     return s.replace("'gnb': 2,", f"'gnb': {n},  # peers.sbatch: CNMF_GNB")
+
+
+def cnmf_p(s: str, n: int) -> str:
+    s2, k = re.subn(r"^(\s*)p = 1$", lambda m: m.group(1) + f"p = {n}  # peers.sbatch: CNMF_P", s, flags=re.M)
+    if k != 1:
+        raise ValueError(f"the script's 'p = 1' line found {k} times")
+    return s2

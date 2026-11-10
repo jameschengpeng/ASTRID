@@ -173,6 +173,46 @@ def test_arguments(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert "== launch" in (tmp_path / "rerun" / "run_0.log").read_text()
 
 
+def test_cnmf_settings_reach_caiman(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--cnmf-p and --cnmf-gnb (the sensitivity check of CNMF's settings on D1) pass from ``launch`` through ``run``
+    to both CNMF fits as CaImAn's p and gnb, every other setting kept; without them the fit is ``CNMF``'s own (p 1,
+    gnb 1, the published setting) through the same call as before."""
+    cases, new = tmp_path / "compare", tmp_path / "rerun" / "results"
+    fake_cases(cases, ["inj00-control-x1"])
+    got: list[dict[str, Any] | None] = []
+
+    def fake_target(movie: np.ndarray, seeds: np.ndarray,
+                    params: dict[str, Any] | None = None) -> tuple[np.ndarray, np.ndarray]:
+        got.append(params)
+        return movie[:, seeds[0]].mean(axis=1), np.array([len(seeds), len(seeds), 0, 1.0, 1.0])
+
+    monkeypatch.setattr(peers, "cnmf_target", fake_target)
+    assert peers.main(["run", "--cases", str(cases), "--results", str(new), "--methods", "cnmf", "--cnmf-p", "2",
+                       "--cnmf-gnb", "3", "inj00-control-x1"]) == 0
+    assert got == [{**peers.CNMF, "p": 2, "gnb": 3}] * 2
+    got.clear()
+    assert peers.main(["run", "--cases", str(cases), "--results", str(tmp_path / "default"), "--methods", "cnmf",
+                       "inj00-control-x1"]) == 0
+    assert got == [None, None] and (peers.CNMF["p"], peers.CNMF["gnb"]) == (1, 1)
+    started: list[list[str]] = []
+
+    class Record:
+        def __init__(self, cmd: list[str], **kw: Any) -> None:
+            started.append(cmd)
+
+        def wait(self) -> int:
+            return 0
+
+    monkeypatch.setattr(peers.subprocess, "Popen", Record)
+    peers.main(["launch", "--cases", str(cases), "--runners", "1", "--methods", "cnmf", "--results",
+                str(tmp_path / "l" / "results"), "--cnmf-p", "2", "--cnmf-gnb", "3"])
+    assert started[0][started[0].index("--cnmf-p") + 1] == "2" and started[0][started[0].index("--cnmf-gnb") + 1] == "3"
+    started.clear()
+    peers.main(["launch", "--cases", str(cases), "--runners", "1", "--methods", "cnmf", "--results",
+                str(tmp_path / "m" / "results")])
+    assert "--cnmf-p" not in started[0] and "--cnmf-gnb" not in started[0]
+
+
 def test_launch_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Two runner processes of ``python -m astrid_repro.peers run`` with the stand-in tools."""
     monkeypatch.setenv("PYTHONPATH", str(fake_tools(tmp_path)))

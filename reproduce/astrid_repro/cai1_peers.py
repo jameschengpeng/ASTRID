@@ -15,12 +15,18 @@ Per recording ``<data>/<name>.h5`` (``mov`` (T, H, W) int16, registered; ``roi``
   ``tuncat_raw`` and ``tuncat_bg``;
 - ``cnmf``: CaImAn's CNMF seeded with the ROI, as its seeded script for the Allen data ran it (p = 1, one
   background component, merge_thresh 1, OASIS); ``cnmf`` = C + YrA of the seeded component, ``cnmf_C`` its C.
+  ``--cnmf-gnb`` and ``--cnmf-p`` set the number of background components and the AR order instead, for the
+  cross-validation of CNMF's settings (gnb 1, 2, 3 × p 1, 2; the defaults, 1 and 1, are the published setting).
+  CaImAn writes its memory-mapped movie to ``$CAIMAN_TEMP``, else to ``~/caiman_data/temp``, whatever folder it is
+  given: ``CAIMAN_TEMP`` is pointed to a temporary folder for each fit, deleted when the fit ends.
 Saves ``<out>/<name>.npz`` (a rerun of some methods merges into it), the file ``tables_public cai1 --peers``
 reads, and ``<out>/<name>_seconds.json``, each call's own time with the movie in memory. The ring subtraction
 and the raw ROI mean need no run (``ring.cai1_reference_rows``).
 
     python -m astrid_repro.cai1_peers --data <export> --out <peers> --methods fissa,tuncat <name> [<name> ...]
     python -m astrid_repro.cai1_peers --data <export> --out <peers> --methods cnmf <name> ...   (CaImAn's env)
+    python -m astrid_repro.cai1_peers --data <export> --out <grid>/gnb<g>_p<p>/cai1 --methods cnmf
+        --cnmf-gnb <g> --cnmf-p <p> <name> ...      (CNMF's grid, read by ``tables_public cai1 --cnmf-grid <grid>``)
 """
 
 from __future__ import annotations
@@ -92,31 +98,44 @@ def run_tuncat(name: str, movie: np.ndarray, roi: np.ndarray) -> dict[str, np.nd
     return out
 
 
-def run_cnmf(name: str, data: Path, roi: np.ndarray, n_processes: int) -> dict[str, np.ndarray]:
-    """CaImAn seeded with the ROI, as CNMF_unmixing_seeded_ABO.py (p 1, gnb 1, merge_thresh 1, OASIS)."""
+def run_cnmf(name: str, data: Path, roi: np.ndarray, n_processes: int, p: int = 1,
+             gnb: int = 1) -> dict[str, np.ndarray]:
+    """CaImAn seeded with the ROI, as CNMF_unmixing_seeded_ABO.py (p 1, gnb 1, merge_thresh 1, OASIS; ``p``
+    and ``gnb`` as given for the cross-validation of CNMF's settings). The memmap lives in a temporary folder,
+    ``CAIMAN_TEMP`` during the fit (module docstring), deleted with the folder after the fit."""
     import caiman as cm  # type: ignore[import-not-found]
     from caiman.source_extraction.cnmf import cnmf  # type: ignore[import-not-found]
 
-    with tempfile.TemporaryDirectory() as tmp:
-        fname = cm.save_memmap([str(data / f"{name}.h5")], base_name=str(Path(tmp) / f"{name}_memmap_"),
-                               order="C", var_name_hdf5="mov")
-        c, dview, n_proc = cm.cluster.setup_cluster(backend="multiprocessing", n_processes=n_processes,
-                                                    single_thread=False)
+    before = os.environ.get("CAIMAN_TEMP")
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        os.environ["CAIMAN_TEMP"] = tmp
         try:
-            yr, dims, t = cm.load_memmap(fname)
-            images = np.reshape(yr.T, [t] + list(dims), order="F")
-            radius = int(np.median(np.sqrt(roi.sum() / np.pi)))
-            a_in = np.reshape(roi[None].transpose([2, 1, 0]), (-1, 1), order="C")
-            t0 = time.perf_counter()
-            cnm = cnmf.CNMF(check_nan=t <= 10000, n_processes=n_proc, k=1, gSig=[radius, radius],
-                            merge_thresh=1, p=1, Ain=a_in.astype(bool), dview=dview, rf=None, stride=None,
-                            gnb=1, method_deconvolution="oasis", border_pix=0, low_rank_background=True,
-                            n_pixels_per_process=1000)
-            cnm.fit(images)
-            c_, yra = np.asarray(cnm.estimates.C), np.asarray(cnm.estimates.YrA)
-            SECONDS["cnmf"] = time.perf_counter() - t0
+            fname = cm.save_memmap([str(data / f"{name}.h5")], base_name=str(Path(tmp) / f"{name}_memmap_"),
+                                   order="C", var_name_hdf5="mov")
+            c, dview, n_proc = cm.cluster.setup_cluster(backend="multiprocessing", n_processes=n_processes,
+                                                        single_thread=False)
+            yr = images = cnm = None
+            try:
+                yr, dims, t = cm.load_memmap(fname)
+                images = np.reshape(yr.T, [t] + list(dims), order="F")
+                radius = int(np.median(np.sqrt(roi.sum() / np.pi)))
+                a_in = np.reshape(roi[None].transpose([2, 1, 0]), (-1, 1), order="C")
+                t0 = time.perf_counter()
+                cnm = cnmf.CNMF(check_nan=t <= 10000, n_processes=n_proc, k=1, gSig=[radius, radius],
+                                merge_thresh=1, p=p, Ain=a_in.astype(bool), dview=dview, rf=None, stride=None,
+                                gnb=gnb, method_deconvolution="oasis", border_pix=0, low_rank_background=True,
+                                n_pixels_per_process=1000)
+                cnm.fit(images)
+                c_, yra = np.asarray(cnm.estimates.C), np.asarray(cnm.estimates.YrA)
+                SECONDS["cnmf"] = time.perf_counter() - t0
+            finally:
+                cm.stop_server(dview=dview)
+                yr = images = cnm = None     # release the memmap before its folder is deleted (Windows)
         finally:
-            cm.stop_server(dview=dview)
+            if before is None:
+                os.environ.pop("CAIMAN_TEMP", None)
+            else:
+                os.environ["CAIMAN_TEMP"] = before
     return {"cnmf": (c_[0] + yra[0]).astype(np.float64), "cnmf_C": c_[0].astype(np.float64)}
 
 
@@ -129,6 +148,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--cpus", type=int, default=int(os.environ.get("SLURM_CPUS_PER_TASK", "4")),
                     help="CaImAn's processes")
     ap.add_argument("--fissa-separation-cores", default="1", help="an integer, or 'all' (FISSA's default)")
+    ap.add_argument("--cnmf-p", type=int, default=1, help="CNMF's AR order (the published setting: 1)")
+    ap.add_argument("--cnmf-gnb", type=int, default=1, help="CNMF's background components (published: 1)")
     a = ap.parse_args(argv)
     methods = tuple(a.methods.split(","))
     if any(m not in METHODS for m in methods):
@@ -144,7 +165,7 @@ def main(argv: list[str] | None = None) -> int:
         if "tuncat" in methods:
             res.update(run_tuncat(name, movie, roi))
         if "cnmf" in methods:
-            res.update(run_cnmf(name, a.data, roi, a.cpus))
+            res.update(run_cnmf(name, a.data, roi, a.cpus, p=a.cnmf_p, gnb=a.cnmf_gnb))
         save(a.out / f"{name}.npz", res)
         sec = a.out / f"{name}_seconds.json"
         old = json.loads(sec.read_text(encoding="utf-8")) if sec.exists() else {}

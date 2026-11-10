@@ -290,3 +290,97 @@ def test_cai1_record(tmp_path: Path) -> None:
     del scores["CNMF"]["cnmf"]["c0_1"]
     with pytest.raises(ValueError, match="incomplete"):
         T.cai1_record(idx, scores)
+
+
+def _cnmf_grid(grid: Path, dataset: str, video: str, n: int, t: int, values: dict[str, float],
+               rows: int | None = None) -> None:
+    """CNMF's grid as ``tuncat_peers`` writes it, one folder per setting (each run with its own --out)."""
+    for g, p in C.CNMF_GRID:
+        name = C.cnmf_setting(g, p)
+        if name in values:
+            d = grid / name / dataset / f"traces_CNMF_Raw_p{p}"
+            d.mkdir(parents=True, exist_ok=True)
+            k = n if rows is None else rows
+            scipy.io.savemat(d / f"{video}.mat", {"C_gt": np.zeros((k, t)), "YrA_gt": np.full((k, t), values[name])})
+
+
+def test_cnmf_grid_order_and_readers(tmp_path: Path) -> None:
+    """The declared order breaks ties (the first maximum): the grid's rows come in it, and sorted names (D3's
+    cell_cv) give it too. Settings without the video are left out; dropped components need cnmf_fill."""
+    names = [C.cnmf_setting(g, p) for g, p in C.CNMF_GRID]
+    assert names == ["gnb1_p1", "gnb1_p2", "gnb2_p1", "gnb2_p2", "gnb3_p1", "gnb3_p2"] == sorted(names)
+    _cnmf_grid(tmp_path / "g", "NAOMi", "Video_0", 3, 5, {n: float(i) for i, n in enumerate(names) if n != "gnb2_p1"})
+    got = D.cnmf_grid_traces(tmp_path / "g", "NAOMi", "Video_0")
+    assert list(got) == [n for n in names if n != "gnb2_p1"]
+    np.testing.assert_array_equal(got["gnb3_p2"], np.full((3, 5), 5.0))
+    _cnmf_grid(tmp_path / "h", "NAOMi", "Video_0", 3, 5, {"gnb1_p1": 1.0}, rows=2)
+    with pytest.raises(ValueError, match="cnmf_fill"):
+        D.cnmf_grid_traces(tmp_path / "h", "NAOMi", "Video_0", masks=np.ones((3, 4, 4), dtype=bool))
+    for name, v in (("gnb1_p2", 2.0), ("gnb3_p1", 3.0)):
+        (tmp_path / "c" / name / "cai1").mkdir(parents=True)
+        np.savez(tmp_path / "c" / name / "cai1" / "r1.npz", cnmf=np.full(4, v), cnmf_C=np.zeros(4))
+    assert {k: float(x[0]) for k, x in D.cai1_cnmf_grid(tmp_path / "c", "r1").items()} == {"gnb1_p2": 2.0,
+                                                                                         "gnb3_p1": 3.0}
+    tie = [C.Grid(["gnb1_p1", "gnb2_p2"], np.array([1.0]), *(np.array([[0.5], [0.5]]),) * 3, 1, 1)] * 3
+    assert C.loo_cv(["a", "b", "c"], tie).setting == ["gnb1_p1"] * 3            # a tie: the published setting
+    assert T.setting_label("CNMF", "gnb3_p2") == "3, 2" and T.setting_label("CNMF", "p1") is None
+
+
+def test_public_grids_with_the_cnmf_grid(tmp_path: Path) -> None:
+    """--cnmf-grid: CNMF over its six settings, CNMF_fixed (the published setting, from the peers) a reference row
+    without a test; the tables list CNMF's chosen settings as the paper's table of them does."""
+    rng = np.random.default_rng(7)
+    arch = tmp_path / "archive"
+    m = _masks()
+    videos = ["v1", "v2", "v3"]
+    for v in videos:
+        (arch / "data/ABO/GT Masks").mkdir(parents=True, exist_ok=True)
+        scipy.io.savemat(D.masks_path(arch, "ABO", v), {"FinalMasks": m.transpose(2, 1, 0).astype(np.uint8)})
+        with h5py.File(D.movie_path(arch, "ABO", v), "w") as f:
+            f["mov"] = rng.normal(100, 5, (30, 40, 30)).astype(np.float32)
+        _peers(D.released_root(arch, "ABO"), v, 3, 30, rng.random())
+        _peers(tmp_path / "peers", v, 3, 30, 0.5)
+        _cnmf_grid(tmp_path / "grid", "ABO", v, 3, 30, {C.cnmf_setting(g, p): 0.1 * g + 0.01 * p
+                                                       for g, p in C.CNMF_GRID})
+        (tmp_path / "ours/ABO/ks2_kb0.1" / v).mkdir(parents=True)
+        np.savez(tmp_path / "ours/ABO/ks2_kb0.1" / v / "result.npz", **{f"dff__{v}": rng.random((3, 30))})
+
+    def scorer(ds: str, v: str, a: str) -> C.Scorer:
+        def score(x: np.ndarray, thr: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, int, int]:
+            f = np.full(thr.size, float(x.mean()))          # the larger the trace, the better: gnb3_p2 wins
+            return f, f, f, 3, 4
+        return score
+
+    grids, _ = T.public_grids("ABO", arch, scorer, ours=[tmp_path / "ours"], peers=[tmp_path / "peers"],
+                              videos=videos, ring=False, log=lambda s: None, cnmf_grid=tmp_path / "grid")
+    assert grids["CNMF"][0].settings == [C.cnmf_setting(g, p) for g, p in C.CNMF_GRID]
+    assert grids[T.CNMF_FIXED][0].settings == ["p1"]
+    record, _, _ = T.public_record("ABO", T.cv_by_method(grids, videos))
+    assert record["CNMF"]["setting"] == ["gnb3_p2"] * 3 and record[T.CNMF_FIXED]["setting"] == ["p1"] * 3
+    assert "CNMF" in record["_meta"]["stats"] and T.CNMF_FIXED not in record["_meta"]["stats"]
+    text = T.public_markdown("ABO", record, None)
+    assert "| CNMF (n_b, p) | 3, 2 (3) |" in text and "CNMF_fixed: CNMF at the published setting" in text
+
+
+def test_cai1_scores_with_the_cnmf_grid(tmp_path: Path) -> None:
+    rng = np.random.default_rng(8)
+    index = [{"name": f"c{c}_{r}", "cell": f"c{c}", "rec": str(r)} for c in range(4) for r in (1, 2)]
+    peers = _mkdir(tmp_path / "peers")
+    for row in index:
+        _export(tmp_path, row["name"], rng)
+        np.savez(peers / f"{row['name']}.npz", cnmf=rng.random(60))
+        for g, p in C.CNMF_GRID:
+            d = _mkdir(tmp_path / "grid" / C.cnmf_setting(g, p) / "cai1")
+            np.savez(d / f"{row['name']}.npz", cnmf=rng.random(60))
+    (tmp_path / "index.json").write_text(json.dumps(index), encoding="utf-8")
+    idx, scores = T.cai1_scores(tmp_path, None, tmp_path / "peers", tmp_path / "grid")
+    assert sorted(scores["CNMF"]) == [C.cnmf_setting(g, p) for g, p in C.CNMF_GRID]
+    assert list(scores[T.CNMF_FIXED]) == ["cnmf"]
+    record, _, _ = T.cai1_record(idx, scores)
+    assert record["results"]["CNMF"]["settings"] == [C.cnmf_setting(g, p) for g, p in C.CNMF_GRID]
+    assert "CNMF (n_b, p)" in T.cai1_markdown(record, None)
+
+
+def _mkdir(p: Path) -> Path:
+    p.mkdir(parents=True, exist_ok=True)
+    return p

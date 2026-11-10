@@ -35,7 +35,10 @@ A case's base is its name without the strength (``base_of``): ``inj00-astro-x3``
   the components kept, the target's component (-1 if CaImAn removed it; the trace is then zero), its match
   and the scale. CaImAn only removes components and keeps the seeds' order, so the target's component is
   found by the order-preserving assignment of kept components to seeds with the largest summed Jaccard index
-  (``seeds_of``; a footprint above 0.2 of its peak against a seed mask, ``jaccard``).
+  (``seeds_of``; a footprint above 0.2 of its peak against a seed mask, ``jaccard``). ``--cnmf-p`` and
+  ``--cnmf-gnb`` set the AR order and the number of background components instead (the paper's in-sample
+  sensitivity check of CNMF's settings on D1; unset, the fit is the published setting's, p 1 and gnb 1). The
+  fit runs in memory: CaImAn writes no memmap.
 
 **Outputs:** ``<results>/<case>.npz`` (``--results``, default ``<cases>/results``) with each method's arrays
 for the target (``RESULT_KEYS``). A run of some methods merges into an existing file and keeps the others'.
@@ -139,7 +142,8 @@ def seeds_of(A: np.ndarray, seeds: np.ndarray) -> list[int]:
     return out
 
 
-def cnmf_target(movie: np.ndarray, seeds: np.ndarray, cnmf_mod: Any = None) -> tuple[np.ndarray, np.ndarray]:
+def cnmf_target(movie: np.ndarray, seeds: np.ndarray, cnmf_mod: Any = None,
+                params: dict[str, Any] | None = None) -> tuple[np.ndarray, np.ndarray]:
     """CNMF seeded with ``seeds`` (k, h, w) bool, the target first; returns the target's C + YrA in the ROI's
     raw units and [seeds, components kept, the target's component, its Jaccard match, the scale]. A target
     whose component CaImAn removed gets a zero trace (TUnCaT's convention for dropped components)."""
@@ -152,7 +156,7 @@ def cnmf_target(movie: np.ndarray, seeds: np.ndarray, cnmf_mod: Any = None) -> t
     a_in = np.stack([s.ravel(order="F") for s in seeds], axis=1).astype(bool)
     radius = max(1, int(np.median(np.sqrt(seeds.sum(axis=(1, 2)) / np.pi))))
     cnm = cnmf_mod.CNMF(n_processes=1, dview=None, k=a_in.shape[1], gSig=[radius, radius], Ain=a_in,
-                        check_nan=T <= 10000, **CNMF)
+                        check_nan=T <= 10000, **(CNMF if params is None else params))
     cnm.fit(images)                         # fit() works in place
     est = cnm.estimates
     A = est.A.toarray() if hasattr(est.A, "toarray") else np.asarray(est.A)
@@ -167,7 +171,7 @@ def cnmf_target(movie: np.ndarray, seeds: np.ndarray, cnmf_mod: Any = None) -> t
 
 
 def run_case(cases: Path, case: str, methods: tuple[str, ...] = DEFAULT_METHODS, results: Path | None = None,
-             tuncat_tol: float = TUNCAT["tol"]) -> dict[str, np.ndarray]:
+             tuncat_tol: float = TUNCAT["tol"], cnmf: dict[str, Any] | None = None) -> dict[str, np.ndarray]:
     """Run ``methods`` on one case and save (merge) its results npz in ``results`` (default
     ``<cases>/results``); returns this run's traces."""
     t0 = time.time()
@@ -199,10 +203,11 @@ def run_case(cases: Path, case: str, methods: tuple[str, ...] = DEFAULT_METHODS,
         timing.append(f"tuncat x2 (tol {tuncat_tol:g}) {time.time() - t1:.0f} s; {masks.shape[0]} masks")
     if "cnmf" in methods:
         t1 = time.time()
+        kw = {} if cnmf is None else {"params": cnmf}          # CNMF's settings, when not ``CNMF``'s
         seeds = np.concatenate([target[None], m["neighbours"].astype(bool)])
-        res["cnmf"], res["cnmf_info"] = cnmf_target(movie, seeds)
+        res["cnmf"], res["cnmf_info"] = cnmf_target(movie, seeds, **kw)
         seeds = np.concatenate([seeds, m["atoms"].astype(bool)])
-        res["cnmf_astro"], res["cnmf_astro_info"] = cnmf_target(movie, seeds)
+        res["cnmf_astro"], res["cnmf_astro_info"] = cnmf_target(movie, seeds, **kw)
         timing.append(f"cnmf x2 {time.time() - t1:.0f} s; {seeds.shape[0]} seeds")
     results = cases / "results" if results is None else results
     results.mkdir(parents=True, exist_ok=True)
@@ -244,7 +249,7 @@ def parse_methods(text: str | None) -> tuple[str, ...]:
 
 
 def launch(cases: Path, runners: int, python: str, methods_arg: str | None = None, results_arg: Path | None = None,
-           tuncat_tol: str | None = None) -> int:
+           tuncat_tol: str | None = None, cnmf_p: str | None = None, cnmf_gnb: str | None = None) -> int:
     """Run every pending case in ``runners`` processes of this module's ``run``; returns the largest exit code,
     or 1 if a case is still pending afterwards."""
     methods = parse_methods(methods_arg)
@@ -256,6 +261,8 @@ def launch(cases: Path, runners: int, python: str, methods_arg: str | None = Non
     extra = ["--methods", methods_arg] if methods_arg else []
     extra += ["--results", str(results)] if results_arg is not None else []
     extra += ["--tuncat-tol", tuncat_tol] if tuncat_tol is not None else []
+    extra += ["--cnmf-p", cnmf_p] if cnmf_p is not None else []
+    extra += ["--cnmf-gnb", cnmf_gnb] if cnmf_gnb is not None else []
     here = Path(__file__).resolve().parents[1]                    # reproduce/, holding astrid_repro
     stamp = time.strftime("%Y-%m-%dT%H:%M:%S")
     procs = []
@@ -288,6 +295,8 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--methods", default=None, help=f"a comma-separated subset of {','.join(METHODS)} "
                        f"(default {','.join(DEFAULT_METHODS)})")
         p.add_argument("--tuncat-tol", default=None, help=f"TUnCaT's tolerance (default {TUNCAT['tol']:g})")
+        p.add_argument("--cnmf-p", default=None, help=f"CNMF's AR order (default {CNMF['p']})")
+        p.add_argument("--cnmf-gnb", default=None, help=f"CNMF's background components (default {CNMF['gnb']})")
     a = ap.parse_args(argv)
     try:
         methods = parse_methods(a.methods)
@@ -297,11 +306,13 @@ def main(argv: list[str] | None = None) -> int:
     if a.command == "launch":
         if a.runners < 1:
             ap.error("--runners must be at least 1")
-        return launch(a.cases, a.runners, a.python, a.methods, a.results, a.tuncat_tol)
+        return launch(a.cases, a.runners, a.python, a.methods, a.results, a.tuncat_tol, a.cnmf_p, a.cnmf_gnb)
     cpus = a.tuncat_cpus
     mp.cpu_count = lambda: cpus           # TUnCaT sizes its NMF pool by cpu_count()
+    settings = {**CNMF, **({} if a.cnmf_p is None else {"p": int(a.cnmf_p)}),
+                **({} if a.cnmf_gnb is None else {"gnb": int(a.cnmf_gnb)})}
     for c in a.names:
-        run_case(a.cases, c, methods, a.results, tol)
+        run_case(a.cases, c, methods, a.results, tol, None if settings == CNMF else settings)
     return 0
 
 

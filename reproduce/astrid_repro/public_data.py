@@ -33,6 +33,8 @@ import h5py
 import numpy as np
 import scipy.io
 
+from astrid_repro.cv import CNMF_GRID, cnmf_setting
+
 ABO_VIDEOS = ("501484643", "501574836", "501729039", "502608215", "503109347",
               "510214538", "524691284", "527048992", "531006860", "539670003")
 NAOMI_VIDEOS = tuple(f"Video_{k}" for k in range(10))
@@ -159,15 +161,7 @@ def peer_traces(root: str | Path | Sequence[str | Path], method: str, video: str
     elif method == "CNMF":
         p = root / "traces_CNMF_Raw_p1" / f"{video}.mat"
         if p.exists():
-            m = _mat(p)
-            c = np.asarray(m["C_gt"], dtype=float)
-            if masks is not None and c.shape[0] < len(masks):
-                if cnmf_fill is None:
-                    raise ValueError(f"CNMF {video}: {c.shape[0]} traces for {len(masks)} masks; the dropped "
-                                     "components need cnmf_fill")
-                out["p1"] = np.asarray(cnmf_fill(m, np.asarray(masks, dtype=bool)), dtype=float)
-            else:
-                out["p1"] = c + np.asarray(m["YrA_gt"], dtype=float)
+            out["p1"] = _cnmf_traces(p, video, masks, cnmf_fill)
     elif method in ("raw", "bgsubs"):
         p = root / "traces_ours_Raw" / "raw" / f"{video}.mat"
         if p.exists():
@@ -271,6 +265,45 @@ def read_cai1_scored(export: str | Path, name: str) -> tuple[np.ndarray, np.ndar
     """A recording's predicted calcium and its scored frames (present and within the electrophysiology)."""
     with h5py.File(Path(export) / f"{name}.h5", "r") as f:
         return np.asarray(f["predicted"], dtype=float), np.asarray(f["valid"], dtype=bool)
+
+
+def _cnmf_traces(p: Path, video: str, masks: np.ndarray | None, cnmf_fill: CnmfFill | None) -> np.ndarray:
+    """C + YrA of one CNMF result; a result with fewer traces than ``masks`` needs ``cnmf_fill`` (``peer_traces``)."""
+    m = _mat(p)
+    c = np.asarray(m["C_gt"], dtype=float)
+    if masks is not None and c.shape[0] < len(masks):
+        if cnmf_fill is None:
+            raise ValueError(f"CNMF {video}: {c.shape[0]} traces for {len(masks)} masks; the dropped "
+                             "components need cnmf_fill")
+        return np.asarray(cnmf_fill(m, np.asarray(masks, dtype=bool)), dtype=float)
+    return c + np.asarray(m["YrA_gt"], dtype=float)
+
+
+def cnmf_grid_traces(grid: str | Path, dataset: str, video: str, masks: np.ndarray | None = None,
+                     cnmf_fill: CnmfFill | None = None) -> dict[str, np.ndarray]:
+    """CNMF's cross-validation grid on D2, D4 or D5 (``cv.CNMF_GRID``): each setting a run of ``tuncat_peers``
+    into its own folder, ``<grid>/gnb<g>_p<p>/<dataset>/traces_CNMF_Raw_p<p>/<video>.mat`` -> setting
+    "gnb<g>_p<p>" -> (n, T) traces as ``peer_traces`` reads CNMF's, in the grid's order (which breaks ties in the
+    cross-validation). A setting without the video is left out."""
+    out: dict[str, np.ndarray] = {}
+    for g, q in CNMF_GRID:
+        p = Path(grid) / cnmf_setting(g, q) / dataset / f"traces_CNMF_Raw_p{q}" / f"{video}.mat"
+        if p.exists():
+            out[cnmf_setting(g, q)] = _cnmf_traces(p, video, masks, cnmf_fill)
+    return out
+
+
+def cai1_cnmf_grid(grid: str | Path, name: str) -> dict[str, np.ndarray]:
+    """CNMF's cross-validation grid on D3 (``cv.CNMF_GRID``): ``<grid>/gnb<g>_p<p>/cai1/<name>.npz``, written by
+    ``cai1_peers --cnmf-gnb <g> --cnmf-p <p>`` -> setting -> trace (``cnmf``)."""
+    out: dict[str, np.ndarray] = {}
+    for g, q in CNMF_GRID:
+        p = Path(grid) / cnmf_setting(g, q) / "cai1" / f"{name}.npz"
+        if p.exists():
+            with np.load(p) as z:
+                if "cnmf" in z.files:
+                    out[cnmf_setting(g, q)] = z["cnmf"]
+    return out
 
 
 def corr(x: np.ndarray, y: np.ndarray, ok: np.ndarray) -> float:

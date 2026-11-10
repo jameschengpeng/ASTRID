@@ -27,6 +27,18 @@ import scipy.io
 THRESHOLDS = {"ABO": tuple(range(10, 155, 5)), "NAOMi": tuple(range(10, 120, 10)),
               "1p": tuple(range(0, 820, 20))}
 
+# CNMF's settings, chosen by the same cross-validation as the other methods' (the paper's Methods): the number
+# of background components (gnb) and the order of the autoregressive model (p). The order is the declared one,
+# which breaks ties (the first maximum): ``loo_cv`` takes the settings in the order of the grid's rows, which
+# ``public_data.cnmf_grid_traces`` gives in this order, and ``cell_cv`` in sorted order, the same one.
+CNMF_GRID = ((1, 1), (1, 2), (2, 1), (2, 2), (3, 1), (3, 2))
+
+
+def cnmf_setting(gnb: int, p: int) -> str:
+    """CNMF's setting name, as the tables and the grid's folders give it ("gnb3_p2")."""
+    return f"gnb{gnb}_p{p}"
+
+
 # (traces (n, T), thresholds (k,)) -> (recall, precision, F1) per threshold, the number of labelled ROIs
 # scored and the number of ground-truth transients
 Scorer = Callable[[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray, np.ndarray, int, int]]

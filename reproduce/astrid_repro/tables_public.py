@@ -10,12 +10,17 @@ the family declared first) and ``p_holm_suite2p`` (with Suite2p, four); ``p_holm
 From traces to grids (``public_grids``) the F1 comes from a scorer passed in (``cv.Scorer``): TUnCaT's
 evaluation code (GPL-2) is not part of this package.
 
+CNMF's settings are chosen by the same cross-validation as the other methods' (``--cnmf-grid``: its six settings,
+``cv.CNMF_GRID``, each in its own folder; ``public_data.cnmf_grid_traces``, ``cai1_cnmf_grid``): the row ``CNMF``
+is then the cross-validated one, and ``CNMF_fixed``, read from ``--peers`` (the published setting, gnb 1 and
+p 1), is a reference row, not tested. Without ``--cnmf-grid`` the row ``CNMF`` is the fixed setting, as before.
+
 Run, with ``reproduce/`` on the path (every path is an argument):
     python -m astrid_repro.tables_public grids --dataset ABO --archive <TUnCaT archive> --ours <root> [...]
-        --peers <root> [...] --suite2p <root> --scorer <module:function> --out <grids>
+        --peers <root> [...] --cnmf-grid <grid> --suite2p <root> --scorer <module:function> --out <grids>
     python -m astrid_repro.tables_public public --dataset ABO --grids <grids> --out <folder>
     python -m astrid_repro.tables_public cai1 --export <export> --ours <root> [...] --peers <folder>
-        --suite2p <root> --out <folder>
+        --cnmf-grid <grid> --suite2p <root> --out <folder>
 ``--scorer`` names a function ``(dataset, video, archive) -> cv.Scorer``; ``--cnmf-fill`` one
 ``(mat, masks) -> (n, T)`` for CNMF results with dropped components (``public_data.peer_traces``).
 """
@@ -26,6 +31,8 @@ import argparse
 import importlib
 import json
 import math
+import re
+from collections import Counter
 from collections.abc import Callable, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
@@ -39,8 +46,9 @@ from astrid_repro.metrics import holm, wilcoxon_p
 from astrid_repro.ring import cai1_reference_rows, video_ring
 
 PEERS = ("TUnCaT", "FISSA", "CNMF")                  # the declared comparisons
+CNMF_FIXED = "CNMF_fixed"                            # CNMF at the published setting, beside its grid: a reference
 REFERENCE = ("raw", "bgsubs", "allen")               # reference rows, not tested (D2, D4, D5)
-METHODS = ("ours", *PEERS, *REFERENCE, "ring", "suite2p")
+METHODS = ("ours", *PEERS, CNMF_FIXED, *REFERENCE, "ring", "suite2p")
 CUTS = (0.05, 0.01, 0.001)                           # the figures' stars
 
 ScorerFactory = Callable[[str, str, str], C.Scorer]
@@ -144,7 +152,7 @@ def public_record(dataset: str, cvs: dict[str, C.CV], thresholds: Sequence[float
                   ) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
     """A dataset's table from each method's CV (``cvs``: "ours", the peers, the reference rows, "ring",
     "suite2p"): (the record, Suite2p's entry, the Holm family), each None where its methods are missing."""
-    record: dict[str, Any] = {m: cv_entry(cvs[m]) for m in ("ours", *PEERS, *REFERENCE) if m in cvs}
+    record: dict[str, Any] = {m: cv_entry(cvs[m]) for m in ("ours", *PEERS, CNMF_FIXED, *REFERENCE) if m in cvs}
     stats = video_tests(cvs) if "ours" in cvs else {}
     thr = list(C.THRESHOLDS[dataset] if thresholds is None else thresholds)
     if "ring" in cvs:
@@ -173,11 +181,15 @@ def cv_by_method(grids: dict[str, list[C.Grid]], videos: Sequence[str]) -> dict[
 
 
 def _grid_task(args: tuple[Any, ...]) -> tuple[str, str, C.Grid | None]:
-    method, dataset, video, archive, ours, peers, suite2p, factory, cnmf_fill, ring_trace = args
+    method, dataset, video, archive, ours, peers, suite2p, factory, cnmf_fill, ring_trace, cnmf_grid = args
     masks = D.read_masks(D.masks_path(archive, dataset, video))
     released = D.released_root(archive, dataset)
     if method == "ours":
         traces = D.ours_traces(ours, dataset, video)
+    elif method == "CNMF" and cnmf_grid:
+        traces = D.cnmf_grid_traces(cnmf_grid, dataset, video, masks=masks, cnmf_fill=cnmf_fill)
+    elif method == CNMF_FIXED:
+        traces = D.peer_traces(peers or released, "CNMF", video, masks=masks, cnmf_fill=cnmf_fill)
     elif method in PEERS:
         traces = D.peer_traces(peers or released, method, video, masks=masks, cnmf_fill=cnmf_fill)
     elif method in REFERENCE:
@@ -198,12 +210,13 @@ def public_grids(dataset: str, archive: str | Path, scorer: ScorerFactory, *,
                  ours: Sequence[str | Path] | None = None, peers: Sequence[str | Path] | None = None,
                  suite2p: str | Path | None = None, videos: Sequence[str] | None = None,
                  cnmf_fill: D.CnmfFill | None = None, ring: bool = True, workers: int = 1,
-                 log: Callable[[str], None] = print) -> tuple[dict[str, list[C.Grid]], dict[str, Any]]:
+                 log: Callable[[str], None] = print, cnmf_grid: str | Path | None = None
+                 ) -> tuple[dict[str, list[C.Grid]], dict[str, Any]]:
     """Every method's grid on every video of a dataset: ASTRID's settings (``ours`` roots), the peers (their
-    reruns, ``peers``; else the archive's released traces), the reference rows (released), the ring (computed
-    here from the archive's movie) and Suite2p (``suite2p`` root). ``scorer(dataset, video, archive)`` gives
-    the video's scorer. A method missing on a video is left out. Returns (method -> grids in video order, the
-    ring traces per video)."""
+    reruns, ``peers``; else the archive's released traces), CNMF over its grid (``cnmf_grid``, with
+    ``CNMF_fixed`` from the peers), the reference rows (released), the ring (computed here from the archive's
+    movie) and Suite2p (``suite2p`` root). ``scorer(dataset, video, archive)`` gives the video's scorer. A method
+    missing on a video is left out. Returns (method -> grids in video order, the ring traces per video)."""
     videos = list(videos or D.VIDEOS[dataset])
     rings: dict[str, Any] = {}
     if ring:
@@ -211,10 +224,12 @@ def public_grids(dataset: str, archive: str | Path, scorer: ScorerFactory, *,
             masks = D.read_masks(D.masks_path(archive, dataset, v))
             rings[v] = video_ring(D.movie_path(archive, dataset, v), masks, D.UM_PER_PX[dataset])
             log(f"{dataset} {v}: ring of {len(masks)} ROIs")
-    todo = [m for m in METHODS if (m != "ours" or ours) and (m != "suite2p" or suite2p) and (m != "ring" or ring)]
+    todo = [m for m in METHODS if (m != "ours" or ours) and (m != "suite2p" or suite2p) and (m != "ring" or ring)
+            and (m != CNMF_FIXED or cnmf_grid)]
     tasks = [(m, dataset, v, str(archive), [str(r) for r in ours or []], [str(r) for r in peers or []],
               None if suite2p is None else str(suite2p), scorer, cnmf_fill,
-              rings[v]["trace"] if m == "ring" else None) for m in todo for v in videos]
+              rings[v]["trace"] if m == "ring" else None, None if cnmf_grid is None else str(cnmf_grid))
+             for m in todo for v in videos]
     got: dict[tuple[str, str], C.Grid | None] = {}
     if workers > 1:
         with ProcessPoolExecutor(max_workers=workers) as ex:
@@ -238,10 +253,12 @@ def public_grids(dataset: str, archive: str | Path, scorer: ScorerFactory, *,
 
 # ---- D3 ----
 
-def cai1_scores(export: str | Path, ours: Sequence[str | Path] | None = None, peers: str | Path | None = None
+def cai1_scores(export: str | Path, ours: Sequence[str | Path] | None = None, peers: str | Path | None = None,
+                cnmf_grid: str | Path | None = None
                 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, dict[str, float]]]]:
     """Every method's r per recording on D3: (the export's index, method -> setting -> {recording: r}), the
-    reference rows first ("raw", "ring", "authors_ring"), then ASTRID and the peers."""
+    reference rows first ("raw", "ring", "authors_ring"), then ASTRID and the peers; with ``cnmf_grid``, CNMF
+    over its grid and ``CNMF_fixed`` from ``peers``."""
     index = D.read_cai1_index(export)
     scores: dict[str, dict[str, dict[str, float]]] = {}
     for row in index:
@@ -249,8 +266,12 @@ def cai1_scores(export: str | Path, ours: Sequence[str | Path] | None = None, pe
         pred, ok = D.read_cai1_scored(export, name)
         for key, tr in cai1_reference_rows(Path(export) / f"{name}.h5").items():
             scores.setdefault(key, {}).setdefault(key, {})[name] = D.corr(tr, pred, ok)
-        for method in (["ours"] if ours else []) + list(PEERS):
-            for setting, tr in D.cai1_traces(method, name, peers, ours).items():
+        for method in (["ours"] if ours else []) + list(PEERS) + ([CNMF_FIXED] if cnmf_grid else []):
+            if method == "CNMF" and cnmf_grid:
+                traces = D.cai1_cnmf_grid(cnmf_grid, name)
+            else:
+                traces = D.cai1_traces("CNMF" if method == CNMF_FIXED else method, name, peers, ours)
+            for setting, tr in traces.items():
                 scores.setdefault(method, {}).setdefault(setting, {})[name] = D.corr(tr, pred, ok)
     return index, scores
 
@@ -317,6 +338,35 @@ def cai1_record(index: list[dict[str, Any]], scores: dict[str, dict[str, dict[st
 
 # ---- reports ----
 
+# the settings chosen, as the paper's table of them gives them (tab:cv-settings)
+CV_LABELS = (("ours", "ASTRID (kappa_d, kappa_np)"), ("TUnCaT", "TUnCaT (alpha)"), ("FISSA", "FISSA (alpha)"),
+             ("CNMF", "CNMF (n_b, p)"))
+SETTING_FORMS = {"ours": r"ks([0-9.]+)_kb([0-9.]+)", "CNMF": r"gnb([0-9]+)_p([0-9]+)"}
+
+
+def setting_label(method: str, s: str) -> str | None:
+    """A chosen setting as the paper's table prints it: "ks16_kb0.03" -> "16, 0.03", "a=0.2" -> "0.2",
+    "gnb3_p2" -> "3, 2"; None for a setting of another form (CNMF's fixed one)."""
+    m = re.fullmatch(SETTING_FORMS.get(method, r"a=([0-9.]+)"), s)
+    return None if m is None else ", ".join(m.groups())
+
+
+def settings_lines(chosen: dict[str, list[str]], unit: str) -> list[str]:
+    """The settings the cross-validation chose, each with the number of held-out units for which it was
+    chosen, the most frequent first (a method at a fixed setting is left out)."""
+    lines = ["", f"Settings chosen by the cross-validation, each with the number of held-out {unit} for which it "
+             "was chosen (the threshold of transient detection, chosen the same way, is not listed):", "",
+             "| method | settings |", "|---|---|"]
+    for m, label in CV_LABELS:
+        labels = [setting_label(m, s) for s in chosen.get(m, [])]
+        if not labels or None in labels:
+            continue
+        times = Counter(labels)
+        order = sorted(times, key=lambda x: (-times[x], [float(y) for y in str(x).split(", ")]))
+        lines.append(f"| {label} | " + "; ".join(f"{x} ({times[x]})" for x in order) + " |")
+    return lines
+
+
 def _p(s: dict[str, Any]) -> str:
     return f"{s['p']:.3g} | {s.get('p_holm', float('nan')):.3g}"
 
@@ -336,6 +386,9 @@ def public_markdown(dataset: str, record: dict[str, Any], s2p: dict[str, Any] | 
         chosen = "; ".join(f"{v}: {s} @ {int(t)}" for v, s, t in zip(e["videos"], e["setting"], e["threshold"],
                                                                       strict=True))
         lines.append(f"| {m} | {f.mean():.4f} | {f.std(ddof=1):.4f} | {f.min():.4f} | {f.max():.4f} | {chosen} |")
+    lines += settings_lines({m: e["setting"] for m, e in rows.items()}, "videos")
+    if CNMF_FIXED in rows:
+        lines += ["", f"{CNMF_FIXED}: CNMF at the published setting (gnb 1, p 1), a reference, not tested."]
     tests = dict(record["_meta"]["stats"])
     if s2p is not None:
         tests["Suite2p"] = s2p["stats"]["Suite2p"]
@@ -359,6 +412,9 @@ def cai1_markdown(record: dict[str, Any], s2p: dict[str, Any] | None) -> str:
     for m, (r, n) in entries.items():
         lines.append(f"| {m} | {np.nanmean(r):.4f} | {np.nanstd(r, ddof=1):.4f} | {np.nanmin(r):.4f} "
                      f"| {np.nanmax(r):.4f} | {n} |")
+    lines += settings_lines({m: e["chosen"] for m, e in res.items()}, "cells")
+    if CNMF_FIXED in res:
+        lines += ["", f"{CNMF_FIXED}: CNMF at the published setting (gnb 1, p 1), a reference, not tested."]
     tests = dict(record["stats"])
     if s2p is not None:
         tests["Suite2p"] = s2p["stats"]["Suite2p"]
@@ -398,6 +454,7 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--suite2p", type=Path, help="Suite2p's traces (<root>/<ds>/<video>/suite2p/<video>.npz)")
     g.add_argument("--scorer", required=True, help="module:function, (dataset, video, archive) -> scorer")
     g.add_argument("--cnmf-fill", help="module:function, (mat, masks) -> (n, T)")
+    g.add_argument("--cnmf-grid", type=Path, help="CNMF's six settings (<grid>/gnb<g>_p<p>/<dataset>/...)")
     g.add_argument("--videos", nargs="*")
     g.add_argument("--workers", type=int, default=1)
     g.add_argument("--out", type=Path, required=True)
@@ -410,13 +467,14 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--export", type=Path, required=True)
     c.add_argument("--ours", type=Path, nargs="+")
     c.add_argument("--peers", type=Path)
+    c.add_argument("--cnmf-grid", type=Path, help="CNMF's six settings (<grid>/gnb<g>_p<p>/cai1/<name>.npz)")
     c.add_argument("--suite2p", type=Path)
     c.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
     if a.cmd == "grids":
         grids, _ = public_grids(a.dataset, a.archive, _callable(a.scorer), ours=a.ours, peers=a.peers,
                                 suite2p=a.suite2p, videos=a.videos, cnmf_fill=_callable(a.cnmf_fill),
-                                workers=a.workers)
+                                workers=a.workers, cnmf_grid=a.cnmf_grid)
         a.out.mkdir(parents=True, exist_ok=True)
         for m, gs in grids.items():
             for v, grid in zip(a.videos or D.VIDEOS[a.dataset], gs, strict=True):
@@ -429,7 +487,7 @@ def main(argv: list[str] | None = None) -> int:
         record, s2p, family = public_record(a.dataset, cv_by_method(grids, videos))
         _write(a.out, f"cv_{a.dataset}", record, s2p, family, public_markdown(a.dataset, record, s2p))
         return 0
-    index, scores = cai1_scores(a.export, a.ours, a.peers)
+    index, scores = cai1_scores(a.export, a.ours, a.peers, a.cnmf_grid)
     s2p_r = cai1_suite2p_scores(a.export, a.suite2p, index) if a.suite2p else None
     record, s2p, family = cai1_record(index, scores, s2p_r)
     _write(a.out, "cv_cai1", record, s2p, family, cai1_markdown(record, s2p))

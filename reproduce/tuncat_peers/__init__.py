@@ -19,12 +19,19 @@ What a rerun gives: run through this folder in the paper's environments (one D2 
 and CNMF's traces were the paper's bit for bit. TUnCaT's unmixing is not deterministic from run to run: its raw
 and background traces were the paper's bit for bit, but its NMF stopped at a different iteration for most
 neurons (a median of 2 iterations apart), so its traces came within 2e-4 (relative) of the paper's, and its F1
-within 0.006 at single thresholds (the best F1 of 10 of its 11 settings unchanged).
+within 0.006 at single thresholds (the best F1 of 10 of its 11 settings unchanged). CNMF with more than one
+background component, at settings of its cross-validation grid, is not deterministic either: CaImAn starts the
+background from scikit-learn's NMF with ``init='nndsvda'``, whose randomized SVD is not seeded (with one
+component it starts from the mean, so the published setting, and any setting with gnb 1, reproduces bit for
+bit). Two runs at the settings the cross-validation chose on D4 (gnb 3, p 2) and D5 (gnb 2, p 2) gave the same
+mean F1 within 0.001, although single traces differ more.
 
 The changes (``staging``) touch no numerics: the platform's paths, Python 3.10's shared memory, FISSA's cache
 folders, CaImAn's renamed calls, and CNMF's number of background components (1, as in the authors' released
-traces; the script says 2). The lines they insert carry the marker ``# peers.sbatch``, the name of the job that
-first applied them, so that the changed scripts are byte for byte those of the paper's runs.
+traces; the script says 2). For the cross-validation of CNMF's settings, ``--cnmf-gnb`` and ``--cnmf-p`` set the
+number of background components and the AR order (gnb 1, 2, 3 × p 1, 2), each setting run into its own folder.
+The lines they insert carry the marker ``# peers.sbatch``, the name of the job that first applied them, so that
+the changed scripts are byte for byte those of the paper's runs.
 
 This program is free software; you can redistribute it and/or modify it under the terms of the GNU General
 Public License as published by the Free Software Foundation; version 2 of the License. This program is

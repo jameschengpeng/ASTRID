@@ -5,6 +5,7 @@ data layout, the saved keys, the merging of reruns and the timing file."""
 from __future__ import annotations
 
 import json
+import os
 import sys
 import textwrap
 from pathlib import Path
@@ -41,15 +42,25 @@ FAKES = {
             return raw * kw["list_alpha"][0], None, raw, raw + kw["tol"]
         """,
     "caiman/__init__.py": """
+        import os
+
         import h5py
         import numpy as np
         from . import cluster
 
+        SEEN = []
+
         def save_memmap(files, base_name, order, var_name_hdf5):
+            # CaImAn 1.13: the memmap goes to its temporary folder, $CAIMAN_TEMP (else ~/caiman_data/temp, which
+            # this fake refuses), whatever folder base_name names
+            temp = os.environ.get("CAIMAN_TEMP")
+            assert temp and os.path.isdir(temp), "CAIMAN_TEMP must name an existing folder"
             with h5py.File(files[0], "r") as f:
                 mov = np.asarray(f[var_name_hdf5], dtype=np.float32)
-            np.save(base_name + "x.npy", mov)
-            return base_name + "x.npy"
+            fname = os.path.join(temp, os.path.basename(base_name) + "x.npy")
+            np.save(fname, mov)
+            SEEN.append(fname)
+            return fname
 
         def load_memmap(fname):
             mov = np.load(fname)
@@ -144,3 +155,22 @@ def test_cnmf_merges_into_the_file(tmp_path: Path, tools: None) -> None:
         np.testing.assert_allclose(z["cnmf"], expected + 1, rtol=1e-5)
     with pytest.raises(SystemExit):
         P.main(["r1", "--data", str(tmp_path / "data"), "--out", str(out), "--methods", "suite2p"])
+
+
+def test_cnmf_settings_and_its_memmap(tmp_path: Path, tools: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--cnmf-gnb and --cnmf-p reach CaImAn (the cross-validation grid); the memmap is written to a temporary
+    CAIMAN_TEMP that is gone after the fit, and the caller's CAIMAN_TEMP is left as it was."""
+    _recording(tmp_path / "data")
+    monkeypatch.setenv("CAIMAN_TEMP", "the caller's")
+    assert P.main(["r1", "--data", str(tmp_path / "data"), "--out", str(tmp_path / "grid" / "gnb3_p2" / "cai1"),
+                   "--methods", "cnmf", "--cnmf-gnb", "3", "--cnmf-p", "2"]) == 0
+    import caiman
+    from caiman.source_extraction.cnmf import cnmf
+
+    kw = cnmf.CALLS[-1]
+    assert (kw["p"], kw["gnb"], kw["k"], kw["merge_thresh"]) == (2, 3, 1, 1)
+    memmap = Path(caiman.SEEN[-1])
+    assert memmap.name.startswith("r1_memmap_") and not memmap.parent.exists()
+    assert os.environ["CAIMAN_TEMP"] == "the caller's"
+    with np.load(tmp_path / "grid" / "gnb3_p2" / "cai1" / "r1.npz") as z:
+        assert {"cnmf", "cnmf_C"} <= set(z.files)

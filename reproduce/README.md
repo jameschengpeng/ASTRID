@@ -26,13 +26,13 @@ A port or a change of GPL-2 code keeps its license, so these folders are kept ap
 | `astrid_repro/run.py` | ASTRID on D2–D5 as the paper ran it: every video at every setting of the dataset's grid (`python -m astrid_repro.run D2 --data <archive> --out <results>`) |
 | `astrid_repro/abo_crop.py` | D2's movies: the URLs of the ten public Allen movies and TUnCaT's crop of them (the first 20 % of frames, the central 200 × 200 pixels) |
 | `astrid_repro/peers.py` | FISSA, TUnCaT and TUnCaT + terr., CNMF and CNMF + terr. (CaImAn) on the exported cases of D1, D6 and D7, at the paper's settings |
-| `astrid_repro/cai1_peers.py` | FISSA, TUnCaT and CNMF (CaImAn) on the recordings of D3's export, at the paper's settings |
+| `astrid_repro/cai1_peers.py` | FISSA, TUnCaT and CNMF (CaImAn) on the recordings of D3's export, at the paper's settings (CNMF also at each setting of its cross-validation grid) |
 | `astrid_repro/suite2p_runner.py` | Suite2p's neuropil subtraction on given masks: whole videos (D2, D4, D5), cai-1 (D3) and exported cases |
 | `astrid_repro/cai1_export.py`, `cai1_rois/` | D3: the export every method read, built from the CRCNS download (the frames placed on the processed traces' grid, rigid registration, 4 × 4 binning, the scored frames, the spike-predicted calcium), with the ROI of each cell, drawn by hand once, blind to all methods |
 | `astrid_repro/stats.py` | the tables of D1 (ASTRID against seven methods), the ablations, D6 (its per-recording scoring and table) and D7 (by recording and by location) |
 | `astrid_repro/public_data.py`, `ring.py`, `cv.py`, `tables_public.py` | D2–D5: the readers of the public data and of their ground truth, the ring subtraction, the leave-one-out cross-validation over settings and detection thresholds, the tables |
 | `astrid_repro/figures/` | the data panels of the paper's figures, drawn from the outputs above: Figure 4 (`cai1.py`) and Supplementary Figure S4 (`public.py`), with the rules that chose their examples (section "Figures" below) |
-| `tuncat_peers/` (**GPL-2**) | FISSA, TUnCaT and CNMF on D2, D4 and D5 with the scripts of TUnCaT's paper-reproduction archive, staged with the paper's changes (CNMF with one background component), and the record of those changes |
+| `tuncat_peers/` (**GPL-2**) | FISSA, TUnCaT and CNMF on D2, D4 and D5 with the scripts of TUnCaT's paper-reproduction archive, staged with the paper's changes (CNMF at its published setting, one background component and AR(1), or at any setting of its cross-validation grid), and the record of those changes |
 | `tuncat_eval/` (**GPL-2**) | the F1 scorer of D2, D4 and D5: TUnCaT's transient detection and matching, the ground-truth transients of the NAOMi videos, the template filtering, the rule for CNMF results with removed components, and the same scoring ROI by ROI for the figures (`evaluation.view`) |
 | `../aqua2_settings/` | the AQuA2 settings that made the astrocyte territory of D1, D6 and D7 |
 
@@ -76,10 +76,33 @@ every method.
    TUnCaT's archive, match the reruns closely but, for CNMF, not exactly, so they are a close second route. A
    rerun through `tuncat_peers` in the paper's environments gives FISSA's and CNMF's traces of the paper bit for
    bit; TUnCaT's unmixing is not deterministic from run to run, so its traces come within about 2e-4 of the
-   paper's and its F1 within about 0.006 at single thresholds (`tuncat_peers/__init__.py`):
+   paper's and its F1 within about 0.006 at single thresholds (`tuncat_peers/__init__.py`). CNMF with more than
+   one background component is not deterministic either: CaImAn starts the background from scikit-learn's NMF
+   with `init='nndsvda'`, whose randomized SVD is not seeded (with one component CaImAn starts from the mean, so
+   the published setting reproduces bit for bit). Two runs at the settings chosen on D4 and D5 gave the same mean
+   F1 within 0.001 (0.8423 and 0.8425 on D4, 0.6825 and 0.6819 on D5), although single traces differ more:
    - FISSA 1.0.0;
    - TUnCaT, its paper's v1.0 scripts;
-   - CNMF in CaImAn 1.13.2, seeded with the masks;
+   - CNMF in CaImAn 1.13.2, seeded with the masks. On D2–D5 its settings are chosen by the same cross-validation
+     as the other methods', over the number of background components (1, 2, 3) and the order of the
+     autoregressive model (1, 2), ties going to the first in the order (1, 1), (1, 2), (2, 1), (2, 2), (3, 1),
+     (3, 2) as (gnb, p). The paper's choices: (1, 1) on D2 (10 of 10 videos), (1, 2) on D3 (20 of 20 cells),
+     (3, 2) on D4 (10 of 10) and (2, 2) on D5 (9 of 9). Each setting runs into its own folder and the tables
+     read them all (`--cnmf-grid`); the published setting, (1, 1), stays in the tables as the reference row
+     `CNMF_fixed`:
+
+     ```bash
+     python -m tuncat_peers --scripts <archive scripts> --data <archive> --dataset NAOMi --method cnmf \
+         --cnmf-gnb 3 --cnmf-p 2 --out <grid>/gnb3_p2 [--smoke <video>]          # D2, D4, D5
+     python -m astrid_repro.cai1_peers --data <D3 export> --out <grid>/gnb1_p2/cai1 --methods cnmf \
+         --cnmf-gnb 1 --cnmf-p 2 <recording> ...                                 # D3
+     ```
+
+     CaImAn writes each memory-mapped movie to `$CAIMAN_TEMP` (else to `~/caiman_data/temp`), so both runners
+     point it to a temporary folder that is deleted when the fit ends (for `tuncat_peers`, when the run ends:
+     one video per run with `--smoke`);
+   - FISSA 1.0.0;
+   - TUnCaT, its paper's v1.0 scripts;
    - Suite2p 1.1.0, its neuropil subtraction on the given masks;
    - the ring subtraction, `ring__<rec>` in ASTRID's output, or `ring.py` on the public data.
 
@@ -94,6 +117,7 @@ every method.
 
      ```bash
      python -m astrid_repro.tables_public grids --dataset ABO --archive <TUnCaT archive> --ours <root> ... \
+         --peers <root> ... --cnmf-grid <grid> \
          --scorer tuncat_eval.evaluation:scorer --cnmf-fill tuncat_eval.evaluation:cnmf_fill --out <grids>
      ```
    - **D3:** the correlation with the calcium predicted from the recorded spikes (`public_data.py`).
