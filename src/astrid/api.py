@@ -34,6 +34,7 @@ import dataclasses
 import datetime as dt
 import hashlib
 import json
+import mmap
 import multiprocessing
 import time
 from collections.abc import Iterator, Sequence
@@ -47,19 +48,23 @@ from typing import Any
 import numpy as np
 from scipy import ndimage as ndi
 
-from astrid import __version__
+from astrid import __version__, kernels
 from astrid.model import Params
+from astrid.noise import high_passed
 from astrid.outputs import demixed_trace, other_contributions, support_trace
 from astrid.patch import (
     DEFAULT_BASELINE,
     FOUR,
+    NOISE_F_CUT,
     REFERENCE_UM_PER_PX,
     BaselineRule,
     Field,
     PixelData,
     Spec,
     build,
+    patch_components,
     patch_flat,
+    patch_region,
     pixel_statistics,
     ring_trace,
 )
@@ -315,25 +320,52 @@ def run_parallel(fn: Any, jobs: Sequence[Any], workers: int, poll_s: float = WOR
     return out
 
 
+def high_passed_residual(y: np.ndarray, m: np.ndarray, fps: float) -> np.ndarray:
+    """The (n, T) pixels' data minus baseline in float64, high-passed as ``patch.build``'s noise covariance
+    computes it for a patch; each row from its own trace."""
+    return high_passed(y.astype(np.float64) - m.astype(np.float64), fps, NOISE_F_CUT)
+
+
+def _shared_array(shape: tuple[int, int]) -> np.ndarray:
+    """A float64 array in anonymous shared memory: processes forked afterwards write into the parent's array."""
+    count = int(shape[0]) * int(shape[1])
+    return np.frombuffer(mmap.mmap(-1, max(8 * count, 8)), dtype=np.float64, count=count).reshape(shape)
+
+
 def _shared_pixel_statistics(args: tuple[str, int, int, float, BaselineRule]) -> tuple[np.ndarray, np.ndarray]:
     name, a, b, fps, rule = args
-    return pixel_statistics((_SHARED["y"][name][a:b], fps, rule))
+    y = _SHARED["y"][name][a:b]
+    m, var = pixel_statistics((y, fps, rule))
+    hp = _SHARED.get("hp")
+    if hp is not None:
+        hp[name][a:b] = high_passed_residual(y, m, fps)
+    return m, var
 
 
 def load_pixels(movies: Sequence[Movie], fps: float, flat: np.ndarray, workers: int = 0,
-                rule: BaselineRule | None = None) -> PixelData:
+                rule: BaselineRule | None = None, high_pass: bool | None = None) -> PixelData:
     """The pixels ``flat`` of every recording, with their baselines (``rule``, default the paper's) and noise
     variances (the variance is the mean over the recordings). ``workers`` > 1 computes the statistics of blocks
-    of pixels in parallel (speed only: each pixel's values come from its own trace)."""
+    of pixels in parallel (speed only: each pixel's values come from its own trace).
+
+    ``high_pass``: also keep each pixel's ``high_passed_residual`` (``PixelData.hp``), from which
+    ``patch.build`` takes a patch's noise covariance instead of high-passing the patch's pixels again. Each
+    pixel is then high-passed once rather than once per patch it lies in; the covariance is the same bitwise.
+    It doubles the memory of the pixel data. None (the default): on where the statistics are computed in
+    forked processes (``workers`` > 1 on Linux or macOS), which write the rows into shared memory; off
+    otherwise."""
     rule = DEFAULT_BASELINE if rule is None else rule
     flat = np.unique(flat)
-    y, m, var = {}, {}, []
+    keep = (FORK and workers > 1 and flat.size > 1) if high_pass is None else bool(high_pass)
+    y, m, var, hp = {}, {}, [], {}
     for mv in movies:
         y[mv.name] = mv.read(flat)
         if workers > 1 and flat.size > 1:
             ends = [int(e) for e in np.linspace(0, flat.size, min(workers, flat.size) + 1)]
             if FORK:
-                with shared(y=y):
+                if keep:
+                    hp[mv.name] = _shared_array(y[mv.name].shape)
+                with shared(y=y, hp=hp if keep else None):
                     parts = run_parallel(_shared_pixel_statistics, [(mv.name, a, b, fps, rule) for a, b in
                                                                    zip(ends[:-1], ends[1:], strict=True)],
                                          workers, context="fork")
@@ -342,10 +374,15 @@ def load_pixels(movies: Sequence[Movie], fps: float, flat: np.ndarray, workers: 
                 parts = run_parallel(pixel_statistics, blocks, workers)
             m[mv.name] = np.concatenate([p[0] for p in parts])
             var.append(np.concatenate([p[1] for p in parts]))
+            if keep and not FORK:
+                hp[mv.name] = high_passed_residual(y[mv.name], m[mv.name], fps)
         else:
             m[mv.name], v = pixel_statistics((y[mv.name], fps, rule))
             var.append(v)
-    return PixelData(flat, y, m, np.mean(var, axis=0))
+            if keep:
+                hp[mv.name] = high_passed_residual(y[mv.name], m[mv.name], fps)
+    return PixelData(flat, y, m, np.mean(var, axis=0), hp=hp if keep else None,
+                     hp_fs=float(fps) if keep else None)
 
 
 # --------------------------------------------------------------------------------------------- outputs
@@ -525,6 +562,20 @@ def _shared_job(args: tuple[Any, ...]) -> RoiResult:
     return fit_roi(fld, data.subset(patch_flat(fld, spec)), spec, params, index, export, astro)
 
 
+def largest_first(fld: Field, specs: Sequence[Spec], astro_components: bool = True) -> list[int]:
+    """The indices of ``specs``, the largest patch problem first: the patch's pixels times its components
+    (``patch.build``'s region and components), ties in the given order. ``demix`` hands the fits to its
+    workers in this order, so that a slow fit does not start last; each fit is independent of the others, so
+    the order changes no result."""
+    sizes = []
+    for sp in specs:
+        roi = fld.neurons == sp.label
+        region = patch_region(fld, roi)
+        comps, _ = patch_components(fld, region, roi, sp.name, sp.label, astro_components=astro_components)
+        sizes.append(int(region.sum()) * len(comps))
+    return sorted(range(len(specs)), key=lambda i: -sizes[i])
+
+
 def demix(movies: Any, rois: np.ndarray, *, fps: float, um_per_px: float, tau_r: float | None = None,
           tau_d: float | None = None, territory: np.ndarray | None = None, evidence: np.ndarray | None = None,
           candidates: np.ndarray | None = None, settings: Settings | None = None, border_px: int = 0,
@@ -570,13 +621,17 @@ def demix(movies: Any, rois: np.ndarray, *, fps: float, um_per_px: float, tau_r:
     flat = np.unique(np.concatenate([patch_flat(fld, sp) for sp in specs])) if specs else np.zeros(0, int)
     data = load_pixels(mv, float(fps), flat, workers, s.baseline_rule())
     load_s = time.time() - t0
+    kernels.warm_up()              # the compiled drive update, loaded before any worker forks
+    # in parallel, the largest patch problems first (each fit is independent of the order)
+    run_specs = ([specs[i] for i in largest_first(fld, specs, astro_components)]
+                 if workers and len(specs) > 1 else specs)
     if workers and len(specs) > 1 and FORK:
         with shared(fld=fld, data=data):
             fitted = run_parallel(_shared_job, [(sp, p, sp.label - 1, export_components, astro_components)
-                                                for sp in specs], workers, context="fork")
+                                                for sp in run_specs], workers, context="fork")
     else:
         jobs = [(fld, data.subset(patch_flat(fld, sp)), sp, p, sp.label - 1, export_components,
-                 astro_components) for sp in specs]
+                 astro_components) for sp in run_specs]
         fitted = run_parallel(_job, jobs, workers) if workers and len(jobs) > 1 else [fit_roi(*j) for j in jobs]
     by_index = {r.index: r for r in fitted}
     out = [by_index.get(v - 1) or RoiResult(v - 1, False, error=skipped.get(v, "")) for v in range(1, n + 1)]

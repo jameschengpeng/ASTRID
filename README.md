@@ -16,7 +16,7 @@ package and the code to reproduce the paper's analysis (`reproduce/`).
 
 ```bash
 pip install astrid-demix            # once released; until then, from a clone:
-pip install -e .                    # numpy, scipy, h5py, pyyaml; add [tiff] to read TIFF movies
+pip install -e .                    # numpy, scipy, h5py, pyyaml, numba; add [tiff] to read TIFF movies
 ```
 
 Python 3.10 or later. AQuA2 (MATLAB) is needed only to make astrocyte territory from a movie; it is not part of
@@ -219,7 +219,14 @@ CASCADE is not part of this package.
 ## Performance
 
 Each ROI is fitted separately; `workers=N` fits N ROIs at a time in separate processes (set one BLAS thread per
-process, e.g. `OMP_NUM_THREADS=1`).
+process, e.g. `OMP_NUM_THREADS=1`), the largest patches first.
+
+- **The drive update runs compiled** (numba). The first run compiles it, which takes several seconds, and numba
+  caches it for later runs.
+- **Memory:** where processes fork (Linux, macOS), `workers` > 1 also high-passes each pixel once for the whole
+  field instead of once per patch, which doubles the memory of the pixel data.
+
+The results are the same bitwise either way.
 
 ## Reproducing the paper
 

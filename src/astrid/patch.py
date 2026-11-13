@@ -33,7 +33,7 @@ import numpy as np
 from scipy import ndimage as ndi
 
 from astrid.model import Component, Patch
-from astrid.noise import high_passed, noise_covariance
+from astrid.noise import covariance_of_high_passed, high_passed, noise_covariance
 
 MARGIN_PX = 8                   # 16 um: the margin of the patch around the ROI
 BORDER_PX = 5                   # the registration border of the authors' recordings (the analysis default)
@@ -142,11 +142,16 @@ def pixel_statistics(args: tuple[np.ndarray, float, BaselineRule]) -> tuple[np.n
 
 @dataclass
 class PixelData:
-    """Traces, baselines and noise variances of a set of field pixels, per recording."""
+    """Traces, baselines and noise variances of a set of field pixels, per recording. ``hp``, if kept
+    (``api.load_pixels``): recording -> (N, T) float64, each pixel's data minus baseline high-passed as
+    ``build``'s noise covariance computes it, at the frame rate ``hp_fs``; None: ``build`` high-passes the
+    patch's pixels itself."""
     flat: np.ndarray                     # (N,) column-major indices, sorted
     y: dict[str, np.ndarray]             # recording -> (N, T) float32
     m: dict[str, np.ndarray]             # recording -> (N, T) float32 baseline
     noise_var: np.ndarray                # (N,) mean over recordings of the variance above NOISE_F_CUT
+    hp: dict[str, np.ndarray] | None = None
+    hp_fs: float | None = None
 
     def rows(self, flat: np.ndarray) -> np.ndarray:
         return np.searchsorted(self.flat, flat)
@@ -155,7 +160,9 @@ class PixelData:
         """The rows of these pixels (a patch's), as their own PixelData."""
         rows = self.rows(np.unique(flat))
         return PixelData(self.flat[rows], {r: self.y[r][rows] for r in self.y},
-                         {r: self.m[r][rows] for r in self.m}, self.noise_var[rows])
+                         {r: self.m[r][rows] for r in self.m}, self.noise_var[rows],
+                         hp=None if self.hp is None else {r: self.hp[r][rows] for r in self.hp},
+                         hp_fs=self.hp_fs)
 
 
 @dataclass
@@ -273,7 +280,12 @@ def build(fld: Field, data: PixelData, spec: Spec, *, astro_components: bool = T
     d = ndi.distance_transform_edt(~roi)
     ring = ((d > scaled(fld, RING_INNER)) & (d <= scaled(fld, RING_OUTER)) & ~others).ravel(order="F")[flat]
     w = 1 / np.maximum(data.noise_var[rows], 1e-12)
-    sigma, _ = noise_covariance([y - m for y, m in zip(ys, ms, strict=True)], fld.fps, NOISE_F_CUT)
+    if data.hp is not None and data.hp_fs == fld.fps and all(r in data.hp for r in data.y):
+        # the field's pixels high-passed once (api.load_pixels): a row's high-pass is its own trace's, so the
+        # covariance is bitwise the one below
+        sigma, _ = covariance_of_high_passed([data.hp[r][rows] for r in data.y], fld.fps, NOISE_F_CUT)
+    else:
+        sigma, _ = noise_covariance([y - m for y, m in zip(ys, ms, strict=True)], fld.fps, NOISE_F_CUT)
     patch = Patch(ys, ms, coords, w, tau, comps, tagrfp=fld.tagrfp_channel)
     return Built(patch, names, flat, roi_local, ring, sigma)
 
