@@ -1,5 +1,6 @@
 """The compiled drive update and the two speed-ups around the fit keep its arithmetic bitwise:
-- the compiled FISTA loop (``kernels._fista``) against the reference loop (``kernels._deconvolve_reference``);
+- the compiled FISTA loop (``kernels._fista``) against the reference loop (``kernels._deconvolve_reference``):
+  bitwise with numpy 2.0-2.2, within rounding with any numpy;
 - a patch's noise covariance from the field's high-passed pixels (``api.load_pixels(high_pass=True)``) against
   the patch's own;
 - ``demix``'s results whatever the order of the fits (``api.largest_first``)."""
@@ -8,6 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from numpy.lib import NumpyVersion
 
 import astrid
 from astrid import api, kernels
@@ -15,6 +17,14 @@ from astrid.kernels import Kernel
 from astrid.patch import Spec, build, patch_flat
 
 FPS = 30.0
+SIZES = [1, 7, 8, 9, 64, 128, 129, 1000, 8191, 8192, 8193, 16385, 20011]
+NUMPY = NumpyVersion(np.__version__)
+# The compiled loop matches the reference loop bit for bit with numpy 2.0-2.2 (checked with 2.0.2, 2.1.3 and 2.2.6).
+# numpy 2.3 changed np.sum's order for some arrays longer than its buffer, and with numpy 1.x the initial state
+# differs in the last bit, so with those the two are checked to agree within rounding.
+bitwise = pytest.mark.skipif(not (NUMPY >= "2.0.0" and NUMPY < "2.3.0"),
+                             reason=f"numpy {np.__version__}: the compiled loop is bitwise the reference loop with "
+                             "numpy 2.0-2.2; the agreement within rounding is tested instead")
 
 
 @pytest.fixture
@@ -25,12 +35,22 @@ def reference_drive(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped
     return use
 
 
-@pytest.mark.parametrize("n", [1, 7, 8, 9, 64, 128, 129, 1000, 8191, 8192, 8193, 16385, 20011])
+@bitwise
+@pytest.mark.parametrize("n", SIZES)
 def test_numpy_sum_order(n: int) -> None:
     rng = np.random.default_rng(n)
     for scale in (1e-6, 1.0, 1e6):
         a = np.ascontiguousarray(rng.standard_normal(n) ** 2 * scale)
         assert kernels._numpy_sum(a, np.getbufsize()) == np.sum(a)
+
+
+@pytest.mark.parametrize("n", SIZES)
+def test_numpy_sum_within_rounding(n: int) -> None:
+    """Any numpy: both are pairwise sums of non-negative terms, so they differ by far less than 32 ulp of the sum."""
+    rng = np.random.default_rng(n)
+    for scale in (1e-6, 1.0, 1e6):
+        a = np.ascontiguousarray(rng.standard_normal(n) ** 2 * scale)
+        assert abs(kernels._numpy_sum(a, np.getbufsize()) - np.sum(a)) <= 32 * np.finfo(np.float64).eps * np.sum(a)
 
 
 def problems():  # type: ignore[no-untyped-def]
@@ -50,6 +70,7 @@ def problems():  # type: ignore[no-untyped-def]
                 yield y, float(rng.uniform(0.5, 3.0)), float(rng.uniform(0.01, 2.0)), k, s0, z0
 
 
+@bitwise
 @pytest.mark.parametrize("n_iter", [0, 1, 300])
 def test_compiled_drive_update_is_the_reference_bitwise(n_iter: int, reference_drive) -> None:  # type: ignore[no-untyped-def]
     for y, weight, lam, k, s0, z0 in problems():
@@ -59,6 +80,19 @@ def test_compiled_drive_update_is_the_reference_bitwise(n_iter: int, reference_d
         new = kernels.deconvolve(y, weight, lam, k, s0=s0, z0=z0, n_iter=n_iter)
         assert np.array_equal(new.s, ref.s) and np.array_equal(new.z, ref.z) and np.array_equal(new.c, ref.c)
         assert new.objective == ref.objective
+
+
+@pytest.mark.parametrize("n_iter", [0, 1, 300])
+def test_compiled_drive_update_is_the_reference_within_rounding(n_iter: int, reference_drive) -> None:  # type: ignore[no-untyped-def]
+    """Any numpy: the compiled loop keeps numpy 2.2's float64 sums wherever numpy's own differ."""
+    for y, weight, lam, k, s0, z0 in problems():
+        reference_drive(False)
+        ref = kernels.deconvolve(y, weight, lam, k, s0=s0, z0=z0, n_iter=n_iter)
+        reference_drive(True)
+        new = kernels.deconvolve(y, weight, lam, k, s0=s0, z0=z0, n_iter=n_iter)
+        for a, b in ((new.s, ref.s), (new.z, ref.z), (new.c, ref.c)):
+            np.testing.assert_allclose(a, b, rtol=1e-9, atol=1e-12)
+        assert abs(new.objective - ref.objective) <= 1e-12 * abs(ref.objective)
 
 
 def disc(shape: tuple[int, int], cy: float, cx: float, r: float) -> np.ndarray:
@@ -92,6 +126,7 @@ def assert_same(a: dict[str, np.ndarray], b: dict[str, np.ndarray]) -> None:
             assert np.array_equal(a[key], b[key], equal_nan=a[key].dtype.kind == "f"), key
 
 
+@bitwise
 def test_demix_is_bitwise_the_same_with_the_compiled_drive(reference_drive) -> None:  # type: ignore[no-untyped-def]
     sc = field_scene(seed=4, t=500)
     kw = {"fps": FPS, "um_per_px": 2.0, "tau_r": 0.05, "tau_d": 0.4, "territory": sc["territory"],

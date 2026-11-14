@@ -188,8 +188,9 @@ def _pairwise_sum(a: np.ndarray, lo: int, n: int) -> float:
 
 @numba.njit(cache=True)
 def _numpy_sum(a: np.ndarray, bufsize: int) -> float:
-    """np.sum of a contiguous float64 array: 0, then the pairwise sum of each block of ``bufsize`` added in
-    turn."""
+    """np.sum of a contiguous float64 array as numpy 2.0-2.2 computes it: 0, then the pairwise sum of each block
+    of ``bufsize`` added in turn. numpy 2.3 changed the order for some arrays longer than its buffer, so this
+    then differs from np.sum by a bit or two, and the compiled loop keeps this order."""
     total = 0.0
     start = 0
     n = a.size
