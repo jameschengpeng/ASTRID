@@ -24,8 +24,16 @@ frames, of their variance across the six methods (missing frames count as no dif
 correlation is recomputed here from the traces and must give the table's per-cell correlation for every cell
 and method, and Ring's and Suite2p's per-recording correlations too.
 
-    python -m astrid_repro.figures cai1 --table <tables>/cv_cai1.json --export <export> --ours <root> [...]
-        --peers <folder> --suite2p <root> --out <folder>
+**The scoring** is the table's. ``tables_public cai1`` writes D3's two (its module docstring): as reported
+(``cv_cai1.json``), ASTRID's ΔF/F0 against every other trace with only its mean removed, and with the same
+running baseline removed from every trace (``--baseline equal``, ``cv_cai1_equal_baseline.json``, whose
+``table["baseline"]`` is the note ``tables_public.EQUAL_BASELINE``), the scoring the paper's Figure 4 shows.
+Given the equal table, every trace but ASTRID's is scored and drawn after its own running baseline is removed
+under ASTRID's rule (``public_data.minus_baseline`` at the recording's frame rate), so the correlations
+recomputed here, the example the rule picks and the traces drawn are those of that scoring.
+
+    python -m astrid_repro.figures cai1 --table <tables>/cv_cai1_equal_baseline.json --export <export>
+        --ours <root> [...] --peers <folder> --suite2p <root> --out <folder>
 """
 
 from __future__ import annotations
@@ -41,6 +49,7 @@ import numpy as np
 from astrid_repro import public_data as D
 from astrid_repro.figures import common as F
 from astrid_repro.ring import cai1_reference_rows
+from astrid_repro.tables_public import EQUAL_BASELINE
 
 ORDER = F.PUBLIC_ORDER
 NAME = "D3 CRCNS cai-1"
@@ -57,9 +66,13 @@ PREDICTED = "#A0A0A0"
 def read_table(path: str | Path) -> dict[str, Any]:
     """D3's table as ``tables_public cai1`` writes it, checked: every method's cells in ASTRID's order,
     Suite2p's entry with ASTRID's correlations, and the five methods' Holm family. Returns {"record",
-    "suite2p", "cells", "values" (method -> r per cell), "tests", "settings" (method -> chosen per cell)}."""
+    "suite2p", "cells", "values" (method -> r per cell), "tests", "settings" (method -> chosen per cell),
+    "baseline" ("reported", or "equal" for a table with ``tables_public``'s equal-baseline note)}."""
     d = json.loads(Path(path).read_text(encoding="utf-8"))
     record, s2p = d["table"], d["suite2p"]
+    note = record.get("baseline")
+    if note is not None and note != EQUAL_BASELINE:
+        raise ValueError(f"D3: the table's baseline note is not tables_public's equal baseline: {note!r}")
     res = record["results"]
     cells = res["ours"]["cells"]
     for m in ORDER[:5]:
@@ -75,7 +88,8 @@ def read_table(path: str | Path) -> dict[str, Any]:
     return {"record": record, "suite2p": s2p, "cells": cells,
             "values": {m: res[m]["r"] for m in ORDER[:5]} | {"suite2p": s2p["suite2p"]["r"]},
             "tests": tests,
-            "settings": {m: res[m]["chosen"] for m in ORDER[:5]} | {"suite2p": ["suite2p"] * len(cells)}}
+            "settings": {m: res[m]["chosen"] for m in ORDER[:5]} | {"suite2p": ["suite2p"] * len(cells)},
+            "baseline": "reported" if note is None else "equal"}
 
 
 def indicators(export: str | Path) -> dict[str, str]:
@@ -96,8 +110,12 @@ def draw_scores(ax: Any, table: dict[str, Any], indicator: dict[str, str]) -> di
                           "Correlation with spike-predicted\ncalcium (higher is better)",
                           f"{NAME}, {len(cells)} cells", markers=[MARKERS[indicator[c]] for c in cells],
                           marker_labels={m: f"{ind} ({counts[ind]})" for ind, m in MARKERS.items()})
+    equal = table["baseline"] == "equal"
     return {"dataset": "D3", "measure": "Pearson r with the spike-predicted calcium, each cell's mean over its "
-            "recordings, at the setting chosen by leave-one-cell-out cross-validation", "cells": cells,
+            "recordings, at the setting chosen by leave-one-cell-out cross-validation"
+            + (", the same running baseline removed from every trace" if equal else ""),
+            "scoring": EQUAL_BASELINE if equal else "as reported: ASTRID's ΔF/F0, every other trace with only "
+            "its mean removed", "cells": cells,
             "indicators": {c: indicator[c] for c in cells}, **shown,
             "p_holm": {m: float(t["p_holm"]) for m, t in table["tests"].items()},
             "holm_family": list(F.PUBLIC_FAMILY)}
@@ -110,21 +128,29 @@ def _z(x: np.ndarray, ok: np.ndarray) -> np.ndarray:
 
 
 def _trace(m: str, name: str, setting: str, export: Path, ours: Sequence[str | Path], peers: str | Path | None,
-           suite2p: str | Path) -> np.ndarray:
-    """One method's trace of one recording at ``setting``."""
+           suite2p: str | Path, baseline: str = "reported", cnmf_grid: str | Path | None = None) -> np.ndarray:
+    """One method's trace of one recording at ``setting``, as the table scored it: CNMF over its grid with
+    ``cnmf_grid`` (as ``tables_public cai1 --cnmf-grid``), and with ``baseline`` "equal", every trace but
+    ASTRID's minus its own running baseline (module docstring)."""
     if m == "suite2p":
-        return D.npz_trace(D.suite2p_path(suite2p, "cai1", name))[0]
-    if m == "ring":                                    # D3's own ring, as the table scored it
-        return cai1_reference_rows(export / f"{name}.h5")["ring"]
-    return np.asarray(D.cai1_traces(m, name, peers, list(ours))[setting], dtype=float)
+        x = D.npz_trace(D.suite2p_path(suite2p, "cai1", name))[0]
+    elif m == "ring":                                  # D3's own ring, as the table scored it
+        x = cai1_reference_rows(export / f"{name}.h5")["ring"]
+    elif m == "CNMF" and cnmf_grid:
+        x = np.asarray(D.cai1_cnmf_grid(cnmf_grid, name)[setting], dtype=float)
+    else:
+        x = np.asarray(D.cai1_traces(m, name, peers, list(ours))[setting], dtype=float)
+    if baseline == "equal" and m != "ours":
+        return D.minus_baseline(x, D.read_cai1_fps(export, name))
+    return x
 
 
 def example(table: dict[str, Any], *, export: str | Path, ours: Sequence[str | Path], peers: str | Path | None,
-            suite2p: str | Path) -> dict[str, Any]:
+            suite2p: str | Path, cnmf_grid: str | Path | None = None) -> dict[str, Any]:
     """The example by the rule of the module docstring, after checking every recording's correlation against
-    the table."""
+    the table (CNMF over ``cnmf_grid`` when the table's CNMF was cross-validated over it)."""
     export = Path(export)
-    cells, values, settings = table["cells"], table["values"], table["settings"]
+    cells, values, settings, baseline = table["cells"], table["values"], table["settings"], table["baseline"]
     per_recording = {"suite2p": table["suite2p"]["suite2p"]["per_recording"],
                      "ring": table["record"]["results"]["ring"]["per_recording"]}
     index = D.read_cai1_index(export)
@@ -135,7 +161,8 @@ def example(table: dict[str, Any], *, export: str | Path, ours: Sequence[str | P
         for row in rows:
             pred, ok = D.read_cai1_scored(export, row["name"])
             for m in ORDER:
-                r = D.corr(_trace(m, row["name"], settings[m][j], export, ours, peers, suite2p), pred, ok)
+                x = _trace(m, row["name"], settings[m][j], export, ours, peers, suite2p, baseline, cnmf_grid)
+                r = D.corr(x, pred, ok)
                 per.setdefault(cell, {}).setdefault(m, {})[row["rec"]] = r
             for m, table_r in per_recording.items():
                 worst = max(worst, abs(per[cell][m][row["rec"]] - table_r[row["name"]]))
@@ -167,7 +194,8 @@ def example(table: dict[str, Any], *, export: str | Path, ours: Sequence[str | P
             b = np.asarray(mov[s:s + 2000], dtype=np.float64)
             acc += b[ok[s:s + b.shape[0]]].sum(axis=0)
         image = acc / ok.sum()
-    z = {m: _z(_trace(m, name, settings[m][j], export, ours, peers, suite2p), ok) for m in ORDER}
+    z = {m: _z(_trace(m, name, settings[m][j], export, ours, peers, suite2p, baseline, cnmf_grid), ok)
+         for m in ORDER}
     spread = np.var(np.array([z[m] for m in ORDER]), axis=0)
     w = int(round(WINDOW_S * fps))
     inside = (t >= span[0]) & (t <= span[1])
@@ -181,7 +209,7 @@ def example(table: dict[str, Any], *, export: str | Path, ours: Sequence[str | P
             "window": (start, start + w), "r": {m: recs[m][rec] for m in ORDER},
             "cell_r": {m: float(r[m][j]) for m in ORDER}, "margin": float(margin[j]), "rec_margin": rec_margin,
             "settings": {m: settings[m][j] for m in ORDER},
-            "best_other": max(ORDER[1:], key=lambda m: r[m][j])}
+            "best_other": max(ORDER[1:], key=lambda m: r[m][j]), "baseline": baseline}
 
 
 def draw_image(ax: Any, ex: dict[str, Any]) -> dict[str, Any]:
@@ -243,20 +271,24 @@ def draw_traces(fig: Any, ex: dict[str, Any]) -> dict[str, Any]:
             "ASTRID's r above the best other method's (each recording of the cell)": ex["rec_margin"],
             "window (frames)": list(ex["window"]),
             "window (s)": [float(ex["t"][s]), float(ex["t"][e - 1])], "spikes shown": int(spikes.size),
+            "traces": "as the table scored them" + (", every trace but ASTRID's minus its own running baseline "
+                                                     "(public_data.minus_baseline)" if ex["baseline"] == "equal"
+                                                     else "") + ", standardized over the scored frames",
             "rows": rows, "rule": "astrid_repro.figures.cai1 (module docstring)"}
 
 
 # ---- the panels ----
 
 def panels(table_path: str | Path, *, export: str | Path, ours: Sequence[str | Path], peers: str | Path | None,
-           suite2p: str | Path) -> list[F.Panel]:
-    """Figure 4: (file stem, figure, record) for the scores, the example's image and the example's traces."""
+           suite2p: str | Path, cnmf_grid: str | Path | None = None) -> list[F.Panel]:
+    """Figure 4: (file stem, figure, record) for the scores, the example's image and the example's traces;
+    ``cnmf_grid`` as given to ``tables_public cai1``."""
     import matplotlib.pyplot as plt
 
     table = read_table(table_path)
     fig, ax = plt.subplots(figsize=(6.4, 4.4), layout="constrained")
     out = [(f"{PANELS[0]}_D3_scores", fig, draw_scores(ax, table, indicators(export)))]
-    ex = example(table, export=export, ours=ours, peers=peers, suite2p=suite2p)
+    ex = example(table, export=export, ours=ours, peers=peers, suite2p=suite2p, cnmf_grid=cnmf_grid)
     fig, ax = plt.subplots(figsize=(3.2, 3.4), layout="constrained")
     fig.supxlabel(NAME)
     out.append((f"{PANELS[1]}_D3_image", fig, draw_image(ax, ex)))

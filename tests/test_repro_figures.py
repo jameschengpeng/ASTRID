@@ -124,6 +124,61 @@ def test_cai1_panels(tmp_path: Path) -> None:
         cai1.read_table(tmp_path / "bad.json")
 
 
+def test_cai1_equal_baseline(tmp_path: Path) -> None:
+    """With ``tables_public cai1 --baseline equal``'s table, the figure scores and draws every trace but
+    ASTRID's after its own running baseline is removed, so its recomputed correlations are that table's; CNMF
+    over its cross-validation grid, as the table took it."""
+    p = _cai1(tmp_path)
+    rng, grid = np.random.default_rng(11), tmp_path / "grid"
+    for row in p["index"]:                                          # two of CNMF's settings, as cai1_peers writes
+        pred, _ = D.read_cai1_scored(p["export"], row["name"])
+        for setting, w in (("gnb1_p1", 0.6), ("gnb1_p2", 0.3)):
+            (grid / setting / "cai1").mkdir(parents=True, exist_ok=True)
+            np.savez(grid / setting / "cai1" / f"{row['name']}.npz", cnmf=pred + w * rng.normal(size=pred.size))
+    idx, scores = T.cai1_scores(p["export"], p["ours"], p["peers"], grid, baseline="equal")
+    record, s2p_entry, family = T.cai1_record(
+        idx, scores, T.cai1_suite2p_scores(p["export"], p["suite2p"], idx, "equal"))
+    record["baseline"] = T.EQUAL_BASELINE                            # as tables_public writes it
+    table = tmp_path / "cv_cai1_equal_baseline.json"
+    table.write_text(json.dumps({"table": record, "suite2p": s2p_entry, "holm": family}), encoding="utf-8")
+    eq, rep = cai1.read_table(table), cai1.read_table(p["table"])
+    assert eq["baseline"] == "equal" and rep["baseline"] == "reported"
+    assert set(eq["settings"]["CNMF"]) <= {"gnb1_p1", "gnb1_p2"}
+    made = cai1.panels(table, export=p["export"], ours=p["ours"], peers=p["peers"], suite2p=p["suite2p"],
+                       cnmf_grid=grid)
+    scores_rec, traces = made[0][2], made[2][2]
+    assert scores_rec["scoring"] == T.EQUAL_BASELINE and "minus its own running baseline" in traces["traces"]
+    margin = np.asarray(eq["values"]["ours"]) - np.max([eq["values"][m] for m in cai1.ORDER[1:]], axis=0)
+    assert traces["cell"] == eq["cells"][int(np.argmax(margin))]
+    for _, fig, _ in made:
+        plt.close(fig)
+    # the traces drawn are the scored ones: every peer's minus its running baseline, ASTRID's as it is
+    ex = cai1.example(eq, export=p["export"], ours=p["ours"], peers=p["peers"], suite2p=p["suite2p"],
+                      cnmf_grid=grid)
+    fps = D.read_cai1_fps(p["export"], ex["name"])
+    for m in cai1.ORDER:
+        x = cai1._trace(m, ex["name"], ex["settings"][m], Path(p["export"]), p["ours"], p["peers"], p["suite2p"],
+                        cnmf_grid=grid)
+        shown = x if m == "ours" else D.minus_baseline(x, fps)
+        np.testing.assert_allclose(ex["z"][m], cai1._z(shown, ex["ok"]))
+    # a note that is not tables_public's is refused; an equal table without its note does not reproduce
+    bad = json.loads(table.read_text(encoding="utf-8"))
+    bad["table"]["baseline"] = "another rule"
+    (tmp_path / "bad_note.json").write_text(json.dumps(bad), encoding="utf-8")
+    with pytest.raises(ValueError, match="baseline note"):
+        cai1.read_table(tmp_path / "bad_note.json")
+    del bad["table"]["baseline"]
+    (tmp_path / "no_note.json").write_text(json.dumps(bad), encoding="utf-8")
+    with pytest.raises(ValueError, match="differ from the table"):
+        cai1.example(cai1.read_table(tmp_path / "no_note.json"), export=p["export"], ours=p["ours"],
+                     peers=p["peers"], suite2p=p["suite2p"], cnmf_grid=grid)
+    out = tmp_path / "figs_equal"
+    assert figures_main(["cai1", "--table", str(table), "--export", str(p["export"]), "--ours",
+                         str(p["ours"][0]), "--peers", str(p["peers"]), "--cnmf-grid", str(grid), "--suite2p",
+                         str(p["suite2p"]), "--out", str(out), "--formats", "png"]) == 0
+    assert json.loads((out / "fig4a_D3_scores.json").read_text(encoding="utf-8"))["scoring"] == T.EQUAL_BASELINE
+
+
 # ---- D2, D4, D5, with a toy scoring ----
 
 def _runs(x: np.ndarray, thr: float) -> np.ndarray:

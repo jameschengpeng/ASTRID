@@ -1,8 +1,8 @@
 """Draw the data panels of one figure's dataset and save each as ``<out>/<panel>_<dataset>_<part>.<format>``
 with its record (``.json``):
 
-    python -m astrid_repro.figures cai1 --table <tables>/cv_cai1.json --export <export> --ours <root> [...]
-        --peers <folder> --suite2p <root> --out <folder>
+    python -m astrid_repro.figures cai1 --table <tables>/cv_cai1_equal_baseline.json --export <export>
+        --ours <root> [...] --peers <folder> --cnmf-grid <grid> --suite2p <root> --out <folder>
     python -m astrid_repro.figures public --dataset ABO --table <tables>/cv_ABO.json --archive <archive>
         --ours <root> [...] --peers <root> [...] --suite2p <root>
         --evaluator tuncat_eval.evaluation:view --cnmf-fill tuncat_eval.evaluation:cnmf_fill --out <folder>
@@ -24,10 +24,12 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("cai1", help="Figure 4 (D3)")
-    c.add_argument("--table", type=Path, required=True, help="cv_cai1.json (tables_public cai1)")
+    c.add_argument("--table", type=Path, required=True, help="cv_cai1_equal_baseline.json (tables_public cai1 "
+                   "--baseline equal, the paper's Figure 4) or cv_cai1.json (as reported)")
     c.add_argument("--export", type=Path, required=True, help="the D3 export (index.json, <recording>.h5)")
     c.add_argument("--ours", type=Path, nargs="+", required=True, help="ASTRID's result roots")
     c.add_argument("--peers", type=Path, required=True, help="the peers' traces (<recording>.npz)")
+    c.add_argument("--cnmf-grid", type=Path, help="CNMF's cross-validation grid, as given to tables_public cai1")
     c.add_argument("--suite2p", type=Path, required=True, help="Suite2p's traces")
     p = sub.add_parser("public", help="one row of Supplementary Figure S4 (D2, D4 or D5)")
     p.add_argument("--dataset", choices=("ABO", "NAOMi", "1p"), required=True)
@@ -47,7 +49,8 @@ def main(argv: list[str] | None = None) -> int:
     from astrid_repro.figures import cai1, common, public
 
     if a.cmd == "cai1":
-        made = cai1.panels(a.table, export=a.export, ours=a.ours, peers=a.peers, suite2p=a.suite2p)
+        made = cai1.panels(a.table, export=a.export, ours=a.ours, peers=a.peers, suite2p=a.suite2p,
+                           cnmf_grid=a.cnmf_grid)
     else:
         made = public.panels(a.dataset, a.table, archive=a.archive, ours=a.ours, peers=a.peers, suite2p=a.suite2p,
                              evaluator=common.callable_from(a.evaluator),
