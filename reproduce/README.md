@@ -124,8 +124,11 @@ were left out of the input of every method.
 
      ```bash
      python -m astrid_repro.tables_public grids --dataset ABO --archive <TUnCaT archive> --ours <root> ... \
-         --peers <root> ... --cnmf-grid <grid> \
+         --peers <root> ... --cnmf-grid <grid> --suite2p <root> \
          --scorer tuncat_eval.evaluation:scorer --cnmf-fill tuncat_eval.evaluation:cnmf_fill --out <grids>
+     python -m astrid_repro.tables_public public --dataset ABO --grids <grids> --out <tables>   # cv_ABO
+     python -m astrid_repro.tables_public public --dataset 1p --grids <grids> --folds recording \
+         --out <tables>                                                        # cv_1p_by_recording
      ```
    - **D3:** the correlation with the calcium predicted from the recorded spikes (`public_data.py`), scored two
      ways, both reported. ASTRID's trace is ΔF/F0, its running baseline removed by the fit. As first scored,
