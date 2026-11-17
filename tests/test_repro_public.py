@@ -12,6 +12,8 @@ import numpy as np
 import pytest
 import scipy.io
 
+from astrid.patch import baseline as astrid_baseline
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "reproduce"))
 from astrid_repro import cv as C  # noqa: E402
@@ -379,6 +381,51 @@ def test_cai1_scores_with_the_cnmf_grid(tmp_path: Path) -> None:
     record, _, _ = T.cai1_record(idx, scores)
     assert record["results"]["CNMF"]["settings"] == [C.cnmf_setting(g, p) for g, p in C.CNMF_GRID]
     assert "CNMF (n_b, p)" in T.cai1_markdown(record, None)
+
+
+def test_cai1_equal_baseline(tmp_path: Path) -> None:
+    """``--baseline equal``: every trace but ASTRID's is scored after its own running baseline is removed by
+    ASTRID's rule; ASTRID's r are the reported ones."""
+    rng = np.random.default_rng(9)
+    t, fps = 600, 5.0                                         # 120 s: the rule's 60-s window moves
+    index = [{"name": f"c{c}_{r}", "cell": f"c{c}", "rec": str(r)} for c in range(4) for r in (1, 2)]
+    drift = np.linspace(0.0, 3.0, t)                          # slow, as a baseline drifts
+    peers = _mkdir(tmp_path / "peers")
+    for row in index:
+        name = row["name"]
+        _export(tmp_path, name, rng, t=t)
+        with h5py.File(tmp_path / f"{name}.h5", "a") as f:
+            f.attrs["fps"] = fps
+        np.savez(peers / f"{name}.npz", **{"tuncat_a=1": rng.random(t) + drift, "fissa_a=0.1": rng.random(t),
+                                           "cnmf": rng.random(t)})
+        np.savez(_mkdir(tmp_path / "ours/cai1/ks1_kb0.03" / name) / "result.npz",
+                 **{f"dff__{name}": rng.random((1, t))})
+        np.savez(_mkdir(tmp_path / "s2p/cai1" / name / "suite2p") / f"{name}.npz", trace=rng.random((1, t)))
+    (tmp_path / "index.json").write_text(json.dumps(index), encoding="utf-8")
+    _, rep = T.cai1_scores(tmp_path, [tmp_path / "ours"], peers)
+    idx, eq = T.cai1_scores(tmp_path, [tmp_path / "ours"], peers, baseline="equal")
+    assert eq["ours"] == rep["ours"]
+    for row in index:
+        name = row["name"]
+        pred, ok = D.read_cai1_scored(tmp_path, name)
+        with np.load(peers / f"{name}.npz") as z:
+            x = np.asarray(z["tuncat_a=1"], dtype=np.float64)
+        assert eq["TUnCaT"]["a=1"][name] == D.corr(x - astrid_baseline(x[None], fps)[0], pred, ok)
+        assert rep["TUnCaT"]["a=1"][name] == D.corr(x, pred, ok)
+        raw = R.cai1_reference_rows(tmp_path / f"{name}.h5")["raw"]
+        assert eq["raw"]["raw"][name] == D.corr(D.minus_baseline(raw, fps), pred, ok)
+    s2p_eq = T.cai1_suite2p_scores(tmp_path, tmp_path / "s2p", idx, "equal")
+    _, _, family = T.cai1_record(idx, eq, s2p_eq)
+    assert family is not None and family["family"] == ["TUnCaT", "FISSA", "CNMF", "Ring", "Suite2p"]
+    assert T.main(["cai1", "--export", str(tmp_path), "--ours", str(tmp_path / "ours"), "--peers", str(peers),
+                   "--suite2p", str(tmp_path / "s2p"), "--baseline", "equal", "--out", str(tmp_path / "tab")]) == 0
+    out = json.loads((tmp_path / "tab/cv_cai1_equal_baseline.json").read_text(encoding="utf-8"))
+    assert out["table"]["baseline"] == T.EQUAL_BASELINE and out["suite2p"]["suite2p"]["per_recording"] == s2p_eq
+    assert "Equal baseline:" in (tmp_path / "tab/cv_cai1_equal_baseline.md").read_text(encoding="utf-8")
+    with pytest.raises(ValueError, match="baseline must be"):
+        T.cai1_scores(tmp_path, None, peers, baseline="detrended")
+    with pytest.raises(ValueError, match="non-finite"):
+        D.minus_baseline(np.array([1.0, np.nan, 2.0]), fps)
 
 
 def _mkdir(p: Path) -> Path:

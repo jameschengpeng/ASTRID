@@ -15,12 +15,18 @@ CNMF's settings are chosen by the same cross-validation as the other methods' (`
 is then the cross-validated one, and ``CNMF_fixed``, read from ``--peers`` (the published setting, gnb 1 and
 p 1), is a reference row, not tested. Without ``--cnmf-grid`` the row ``CNMF`` is the fixed setting, as before.
 
+D3 has two scorings (``cai1 --baseline``), and the paper reports both. ``reported`` (the default): ASTRID's ΔF/F0,
+its running baseline removed by the fit, and every other trace with only its mean removed by the correlation.
+``equal``: every trace but ASTRID's has its own running baseline removed by ASTRID's rule
+(``public_data.minus_baseline``) before the correlation, the cross-validation and the tests then as in
+``reported``; written as ``cv_cai1_equal_baseline``.
+
 Run, with ``reproduce/`` on the path (every path is an argument):
     python -m astrid_repro.tables_public grids --dataset ABO --archive <TUnCaT archive> --ours <root> [...]
         --peers <root> [...] --cnmf-grid <grid> --suite2p <root> --scorer <module:function> --out <grids>
     python -m astrid_repro.tables_public public --dataset ABO --grids <grids> --out <folder>
     python -m astrid_repro.tables_public cai1 --export <export> --ours <root> [...] --peers <folder>
-        --cnmf-grid <grid> --suite2p <root> --out <folder>
+        --cnmf-grid <grid> --suite2p <root> [--baseline equal] --out <folder>
 ``--scorer`` names a function ``(dataset, video, archive) -> cv.Scorer``; ``--cnmf-fill`` one
 ``(mat, masks) -> (n, T)`` for CNMF results with dropped components (``public_data.peer_traces``).
 """
@@ -50,6 +56,9 @@ CNMF_FIXED = "CNMF_fixed"                            # CNMF at the published set
 REFERENCE = ("raw", "bgsubs", "allen")               # reference rows, not tested (D2, D4, D5)
 METHODS = ("ours", *PEERS, CNMF_FIXED, *REFERENCE, "ring", "suite2p")
 CUTS = (0.05, 0.01, 0.001)                           # the figures' stars
+BASELINES = ("reported", "equal")                    # D3's scorings (cai1_scores)
+EQUAL_BASELINE = ("every trace but ASTRID's minus its own running baseline under ASTRID's rule (the 10th percentile "
+                  "of 1-s means in a moving 60-s window) before the correlation; ASTRID's trace as reported")
 
 ScorerFactory = Callable[[str, str, str], C.Scorer]
 
@@ -253,36 +262,54 @@ def public_grids(dataset: str, archive: str | Path, scorer: ScorerFactory, *,
 
 # ---- D3 ----
 
+def _check_baseline(baseline: str) -> None:
+    if baseline not in BASELINES:
+        raise ValueError(f"baseline must be one of {BASELINES}, got {baseline!r}")
+
+
+def _cai1_r(trace: np.ndarray, pred: np.ndarray, ok: np.ndarray, fps: float | None) -> float:
+    """A trace's D3 score; with ``fps``, after its own running baseline is removed (``D.minus_baseline``)."""
+    return D.corr(trace if fps is None else D.minus_baseline(trace, fps), pred, ok)
+
+
 def cai1_scores(export: str | Path, ours: Sequence[str | Path] | None = None, peers: str | Path | None = None,
-                cnmf_grid: str | Path | None = None
+                cnmf_grid: str | Path | None = None, baseline: str = "reported"
                 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, dict[str, float]]]]:
     """Every method's r per recording on D3: (the export's index, method -> setting -> {recording: r}), the
     reference rows first ("raw", "ring", "authors_ring"), then ASTRID and the peers; with ``cnmf_grid``, CNMF
-    over its grid and ``CNMF_fixed`` from ``peers``."""
+    over its grid and ``CNMF_fixed`` from ``peers``. ``baseline`` (module docstring): "reported", or "equal",
+    every trace but ASTRID's scored after its own running baseline is removed by ASTRID's rule."""
+    _check_baseline(baseline)
     index = D.read_cai1_index(export)
     scores: dict[str, dict[str, dict[str, float]]] = {}
     for row in index:
         name = row["name"]
         pred, ok = D.read_cai1_scored(export, name)
+        fps = D.read_cai1_fps(export, name) if baseline == "equal" else None
         for key, tr in cai1_reference_rows(Path(export) / f"{name}.h5").items():
-            scores.setdefault(key, {}).setdefault(key, {})[name] = D.corr(tr, pred, ok)
+            scores.setdefault(key, {}).setdefault(key, {})[name] = _cai1_r(tr, pred, ok, fps)
         for method in (["ours"] if ours else []) + list(PEERS) + ([CNMF_FIXED] if cnmf_grid else []):
             if method == "CNMF" and cnmf_grid:
                 traces = D.cai1_cnmf_grid(cnmf_grid, name)
             else:
                 traces = D.cai1_traces("CNMF" if method == CNMF_FIXED else method, name, peers, ours)
             for setting, tr in traces.items():
-                scores.setdefault(method, {}).setdefault(setting, {})[name] = D.corr(tr, pred, ok)
+                r = _cai1_r(tr, pred, ok, None if method == "ours" else fps)    # ASTRID's: ΔF/F0 as it is
+                scores.setdefault(method, {}).setdefault(setting, {})[name] = r
     return index, scores
 
 
-def cai1_suite2p_scores(export: str | Path, root: str | Path, index: list[dict[str, Any]]) -> dict[str, float]:
-    """Suite2p's r per recording on D3 (its trace ``<root>/cai1/<name>/suite2p/<name>.npz``)."""
+def cai1_suite2p_scores(export: str | Path, root: str | Path, index: list[dict[str, Any]],
+                        baseline: str = "reported") -> dict[str, float]:
+    """Suite2p's r per recording on D3 (its trace ``<root>/cai1/<name>/suite2p/<name>.npz``), scored as
+    ``cai1_scores`` scores the peers under ``baseline``."""
+    _check_baseline(baseline)
     out: dict[str, float] = {}
     for row in index:
         name = row["name"]
         pred, ok = D.read_cai1_scored(export, name)
-        out[name] = D.corr(D.npz_trace(D.suite2p_path(root, "cai1", name))[0], pred, ok)
+        fps = D.read_cai1_fps(export, name) if baseline == "equal" else None
+        out[name] = _cai1_r(D.npz_trace(D.suite2p_path(root, "cai1", name))[0], pred, ok, fps)
     return out
 
 
@@ -405,7 +432,10 @@ def cai1_markdown(record: dict[str, Any], s2p: dict[str, Any] | None) -> str:
     res = record["results"]
     cells = next(iter(res.values()))["cells"]
     lines = [f"# D3 (cai-1): correlation with the spike-predicted calcium, leave-one-cell-out CV ({len(cells)} "
-             "cells)", "", "| method | mean r | SD | min | max | recordings |", "|---|---|---|---|---|---|"]
+             "cells)", ""]
+    if "baseline" in record:
+        lines += [f"Equal baseline: {record['baseline']}.", ""]
+    lines += ["| method | mean r | SD | min | max | recordings |", "|---|---|---|---|---|---|"]
     entries = {m: (np.array(e["r"]), e["n_recordings"]) for m, e in res.items()}
     if s2p is not None:
         entries["suite2p"] = (np.array(s2p["suite2p"]["r"]), s2p["n_recordings"])
@@ -469,6 +499,9 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--peers", type=Path)
     c.add_argument("--cnmf-grid", type=Path, help="CNMF's six settings (<grid>/gnb<g>_p<p>/cai1/<name>.npz)")
     c.add_argument("--suite2p", type=Path)
+    c.add_argument("--baseline", choices=BASELINES, default="reported",
+                   help="equal: every trace but ASTRID's minus its own running baseline under ASTRID's rule before "
+                        "the correlation (written as cv_cai1_equal_baseline)")
     c.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
     if a.cmd == "grids":
@@ -487,10 +520,13 @@ def main(argv: list[str] | None = None) -> int:
         record, s2p, family = public_record(a.dataset, cv_by_method(grids, videos))
         _write(a.out, f"cv_{a.dataset}", record, s2p, family, public_markdown(a.dataset, record, s2p))
         return 0
-    index, scores = cai1_scores(a.export, a.ours, a.peers, a.cnmf_grid)
-    s2p_r = cai1_suite2p_scores(a.export, a.suite2p, index) if a.suite2p else None
+    index, scores = cai1_scores(a.export, a.ours, a.peers, a.cnmf_grid, a.baseline)
+    s2p_r = cai1_suite2p_scores(a.export, a.suite2p, index, a.baseline) if a.suite2p else None
     record, s2p, family = cai1_record(index, scores, s2p_r)
-    _write(a.out, "cv_cai1", record, s2p, family, cai1_markdown(record, s2p))
+    if a.baseline == "equal":
+        record["baseline"] = EQUAL_BASELINE
+    stem = "cv_cai1" if a.baseline == "reported" else "cv_cai1_equal_baseline"
+    _write(a.out, stem, record, s2p, family, cai1_markdown(record, s2p))
     return 0
 
 

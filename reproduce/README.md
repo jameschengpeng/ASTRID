@@ -120,7 +120,16 @@ every method.
          --peers <root> ... --cnmf-grid <grid> \
          --scorer tuncat_eval.evaluation:scorer --cnmf-fill tuncat_eval.evaluation:cnmf_fill --out <grids>
      ```
-   - **D3:** the correlation with the calcium predicted from the recorded spikes (`public_data.py`).
+   - **D3:** the correlation with the calcium predicted from the recorded spikes (`public_data.py`), scored two
+     ways, both reported. ASTRID's trace is ΔF/F0, its running baseline removed by the fit. As first scored,
+     every other trace has only its mean removed. With the same baseline, every other trace first has its own
+     running baseline removed by ASTRID's rule (the 10th percentile of 1-s means in a moving 60-s window):
+
+     ```bash
+     python -m astrid_repro.tables_public cai1 --export <D3 export> --ours <root> ... --peers <folder> \
+         --cnmf-grid <grid> --suite2p <root> --out <tables>                     # cv_cai1
+     python -m astrid_repro.tables_public cai1 ... --baseline equal --out <tables>  # cv_cai1_equal_baseline
+     ```
 5. **Statistics and tables.** The mean ± SD is taken over the units: the imaging locations on D1 and D6, the
    recordings on D7, the videos on D2, D4 and D5, the cells on D3. ASTRID is compared with each other method by a
    paired two-sided Wilcoxon signed-rank test, with Holm's correction over the comparisons of each measure

@@ -16,7 +16,9 @@ D3 (CRCNS cai-1, Chen et al. 2013): the ground truth is the calcium predicted fr
 (``predicted_calcium``, from the processed files), and the score is the correlation with it over the scored
 frames (``corr``). Every method read the same export: per recording ``<name>.h5`` with ``mov`` (registered,
 binned 4 x 4), ``roi``, ``valid`` (the scored frames), ``predicted``, ``fmean_roi`` and ``fmean_neuropil``, all
-listed in ``index.json``.
+listed in ``index.json``. ASTRID's trace is ΔF/F0, its running baseline removed by the fit. In the
+equal-baseline scoring, every other trace has its own running baseline removed by the same rule
+(``minus_baseline``) before the correlation.
 
 ASTRID's traces are read as ``astrid.Result.save`` writes them, one folder per setting:
 ``<root>/<ds>/<setting>/<video>/result.npz``.
@@ -33,6 +35,7 @@ import h5py
 import numpy as np
 import scipy.io
 
+from astrid.patch import baseline as astrid_baseline
 from astrid_repro.cv import CNMF_GRID, cnmf_setting
 
 ABO_VIDEOS = ("501484643", "501574836", "501729039", "502608215", "503109347",
@@ -265,6 +268,22 @@ def read_cai1_scored(export: str | Path, name: str) -> tuple[np.ndarray, np.ndar
     """A recording's predicted calcium and its scored frames (present and within the electrophysiology)."""
     with h5py.File(Path(export) / f"{name}.h5", "r") as f:
         return np.asarray(f["predicted"], dtype=float), np.asarray(f["valid"], dtype=bool)
+
+
+def read_cai1_fps(export: str | Path, name: str) -> float:
+    """A recording's frame rate, as its export holds it (``fps``)."""
+    with h5py.File(Path(export) / f"{name}.h5", "r") as f:
+        return float(f.attrs["fps"])
+
+
+def minus_baseline(x: np.ndarray, fps: float) -> np.ndarray:
+    """A trace minus its running baseline under ASTRID's default rule (``astrid.patch.baseline``: the 10th
+    percentile of 1-s means in a moving 60-s window, interpolated to the frames), for D3's equal-baseline
+    scoring (``tables_public cai1 --baseline equal``). A trace with a non-finite frame is refused."""
+    y = np.asarray(x, dtype=np.float64)
+    if not np.isfinite(y).all():
+        raise ValueError("a trace with non-finite frames: its 1-s means are undefined there")
+    return y - astrid_baseline(y[None], fps)[0]
 
 
 def _cnmf_traces(p: Path, video: str, masks: np.ndarray | None, cnmf_fill: CnmfFill | None) -> np.ndarray:
