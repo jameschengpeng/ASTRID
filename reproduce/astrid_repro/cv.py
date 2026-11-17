@@ -149,6 +149,32 @@ def loo_cv(videos: Sequence[str], grids: Sequence[Grid]) -> CV:
     return CV(list(videos), chosen_s, np.array(chosen_t), np.array(rec), np.array(pre), np.array(f1))
 
 
+
+def group_cv(videos: Sequence[str], grids: Sequence[Grid], groups: Sequence[str]) -> CV:
+    """``loo_cv`` with the videos of one group held out together: each video gets the (setting, threshold) with
+    the highest mean F1 over the videos of the other groups (the first maximum, settings before thresholds). With
+    one group per video it is ``loo_cv``."""
+    names, thr = grids[0].settings, grids[0].thresholds
+    for g in grids:
+        if g.settings != names or not np.array_equal(g.thresholds, thr):
+            raise ValueError("every video needs the same settings and thresholds")
+    if len(groups) != len(videos) or len(set(groups)) < 2:
+        raise ValueError("one group per video, and at least two groups")
+    F = np.stack([g.f1 for g in grids])                       # (videos, settings, thresholds)
+    n = len(videos)
+    chosen_s, chosen_t, rec, pre, f1 = [], [], [], [], []
+    for v in range(n):
+        train = [i for i in range(n) if groups[i] != groups[v]]
+        mean = F[train].mean(axis=0)
+        s, t = np.unravel_index(int(np.argmax(mean)), mean.shape)
+        chosen_s.append(names[s])
+        chosen_t.append(thr[t])
+        rec.append(grids[v].recall[s, t])
+        pre.append(grids[v].precision[s, t])
+        f1.append(grids[v].f1[s, t])
+    return CV(list(videos), chosen_s, np.array(chosen_t), np.array(rec), np.array(pre), np.array(f1))
+
+
 def read_tuncat_scores(path: str | Path, setting: str = "fixed") -> list[Grid]:
     """The per-video grids TUnCaT's MATLAB evaluation saves (``list_recall``, ``list_precision``, ``list_F1``
     as (videos, alphas, thresholds), or (videos, thresholds) for a method with one setting;

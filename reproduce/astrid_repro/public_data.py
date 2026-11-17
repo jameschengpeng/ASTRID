@@ -44,6 +44,14 @@ NAOMI_VIDEOS = tuple(f"Video_{k}" for k in range(10))
 ONE_PHOTON_VIDEOS = ("c25_59_228", "c27_12_326", "c28_83_210", "c25_163_267", "c27_114_176", "c28_161_149",
                      "c25_123_348", "c27_122_121", "c28_163_244")     # TUnCaT's order
 VIDEOS = {"ABO": ABO_VIDEOS, "NAOMi": NAOMI_VIDEOS, "1p": ONE_PHOTON_VIDEOS}
+
+
+def one_photon_recording(video: str) -> str:
+    """The recording a D5 sub-video was cropped from: the first part of its name. The nine sub-videos are
+    crops of three one-photon recordings, c25, c27 and c28 (Bao et al. 2022, Methods)."""
+    if video not in ONE_PHOTON_VIDEOS:
+        raise ValueError(f"{video} is not one of D5's sub-videos")
+    return video.split("_")[0]
 PAPER_NAMES = {"ABO": "D2", "cai1": "D3", "NAOMi": "D4", "1p": "D5"}
 UM_PER_PX = {"ABO": 0.785, "NAOMi": 1.0, "1p": 3.5}                  # the paper's Table 1
 

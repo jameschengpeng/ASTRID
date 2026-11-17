@@ -21,10 +21,16 @@ its running baseline removed by the fit, and every other trace with only its mea
 (``public_data.minus_baseline``) before the correlation, the cross-validation and the tests then as in
 ``reported``; written as ``cv_cai1_equal_baseline``.
 
+D5's nine sub-videos are crops of three recordings (``public_data.one_photon_recording``). By default each
+sub-video is held out alone, as in TUnCaT's evaluation. ``public --folds recording`` holds out the three crops
+of a recording together (``cv.group_cv``), for every method, so no crop of the held-out recording helps choose
+its settings or threshold; written as ``cv_1p_by_recording``.
+
 Run, with ``reproduce/`` on the path (every path is an argument):
     python -m astrid_repro.tables_public grids --dataset ABO --archive <TUnCaT archive> --ours <root> [...]
         --peers <root> [...] --cnmf-grid <grid> --suite2p <root> --scorer <module:function> --out <grids>
     python -m astrid_repro.tables_public public --dataset ABO --grids <grids> --out <folder>
+    python -m astrid_repro.tables_public public --dataset 1p --grids <grids> --folds recording --out <folder>
     python -m astrid_repro.tables_public cai1 --export <export> --ours <root> [...] --peers <folder>
         --cnmf-grid <grid> --suite2p <root> [--baseline equal] --out <folder>
 ``--scorer`` names a function ``(dataset, video, archive) -> cv.Scorer``; ``--cnmf-fill`` one
@@ -184,9 +190,19 @@ def public_record(dataset: str, cvs: dict[str, C.CV], thresholds: Sequence[float
     return record, entry, family
 
 
-def cv_by_method(grids: dict[str, list[C.Grid]], videos: Sequence[str]) -> dict[str, C.CV]:
-    """Each method's leave-one-video-out CV, for the methods with a grid on every video."""
-    return {m: C.loo_cv(videos, g) for m, g in grids.items() if len(g) == len(videos) and len(videos) > 1}
+FOLDS = ("video", "recording")
+
+
+def cv_by_method(grids: dict[str, list[C.Grid]], videos: Sequence[str], folds: str = "video"
+                 ) -> dict[str, C.CV]:
+    """Each method's CV, for the methods with a grid on every video: leave one video out, or, with ``folds``
+    "recording" (D5 only), the sub-videos of a recording held out together."""
+    if folds not in FOLDS:
+        raise ValueError(f"folds must be one of {FOLDS}, got {folds!r}")
+    if folds == "video":
+        return {m: C.loo_cv(videos, g) for m, g in grids.items() if len(g) == len(videos) and len(videos) > 1}
+    groups = [D.one_photon_recording(v) for v in videos]
+    return {m: C.group_cv(videos, g, groups) for m, g in grids.items() if len(g) == len(videos)}
 
 
 def _grid_task(args: tuple[Any, ...]) -> tuple[str, str, C.Grid | None]:
@@ -398,11 +414,13 @@ def _p(s: dict[str, Any]) -> str:
     return f"{s['p']:.3g} | {s.get('p_holm', float('nan')):.3g}"
 
 
-def public_markdown(dataset: str, record: dict[str, Any], s2p: dict[str, Any] | None) -> str:
+def public_markdown(dataset: str, record: dict[str, Any], s2p: dict[str, Any] | None,
+                    folds: str = "video") -> str:
     rows = {m: e for m, e in record.items() if m != "_meta"}
     videos = rows["ours"]["videos"] if "ours" in rows else next(iter(rows.values()))["videos"]
-    lines = [f"# {D.PAPER_NAMES[dataset]} ({dataset}): F1 by leave-one-video-out cross-validation "
-             f"({len(videos)} videos)", "",
+    how = ("leave-one-video-out cross-validation" if folds == "video" else
+           "cross-validation by recording, the sub-videos of a recording held out together")
+    lines = [f"# {D.PAPER_NAMES[dataset]} ({dataset}): F1 by {how} ({len(videos)} videos)", "",
              "| method | mean F1 | SD | min | max | settings chosen (video: setting @ threshold) |",
              "|---|---|---|---|---|---|"]
     entries = dict(rows)
@@ -492,6 +510,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dataset", choices=("ABO", "NAOMi", "1p"), required=True)
     p.add_argument("--grids", type=Path, required=True, help="grid_<method>_<video>.npz files")
     p.add_argument("--videos", nargs="*")
+    p.add_argument("--folds", choices=FOLDS, default="video",
+                   help="recording (D5 only): the sub-videos of a recording held out together (written as "
+                        "cv_1p_by_recording)")
     p.add_argument("--out", type=Path, required=True)
     c = sub.add_parser("cai1", help="the D3 table from the export and the traces")
     c.add_argument("--export", type=Path, required=True)
@@ -517,8 +538,11 @@ def main(argv: list[str] | None = None) -> int:
         videos = list(a.videos or D.VIDEOS[a.dataset])
         grids = {m: [C.load_grid(a.grids / f"grid_{m}_{v}.npz") for v in videos] for m in METHODS
                  if all((a.grids / f"grid_{m}_{v}.npz").exists() for v in videos)}
-        record, s2p, family = public_record(a.dataset, cv_by_method(grids, videos))
-        _write(a.out, f"cv_{a.dataset}", record, s2p, family, public_markdown(a.dataset, record, s2p))
+        if a.folds == "recording" and a.dataset != "1p":
+            raise SystemExit("--folds recording is D5's (1p): only its sub-videos share recordings")
+        record, s2p, family = public_record(a.dataset, cv_by_method(grids, videos, a.folds))
+        stem = f"cv_{a.dataset}" if a.folds == "video" else f"cv_{a.dataset}_by_recording"
+        _write(a.out, stem, record, s2p, family, public_markdown(a.dataset, record, s2p, a.folds))
         return 0
     index, scores = cai1_scores(a.export, a.ours, a.peers, a.cnmf_grid, a.baseline)
     s2p_r = cai1_suite2p_scores(a.export, a.suite2p, index, a.baseline) if a.suite2p else None

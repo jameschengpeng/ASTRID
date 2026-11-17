@@ -75,6 +75,8 @@ were left out of the input of every method.
    - On D2–D5, every (kappa_d, kappa_np) pair of the dataset's grid is run on every video (`run.py`, into the
      layout `tables_public` reads). Leave-one-video-out cross-validation (leave-one-cell-out on D3) then picks
      the setting that is applied to each held-out video (`cv.py`).
+   - D5's nine sub-videos are crops of three recordings. `tables_public public --dataset 1p --folds recording`
+     holds out the three crops of a recording together, for every method (`cv_1p_by_recording`).
 3. **Peer methods**, with their authors' code (`peers.py` on D1, D6 and D7, `cai1_peers.py` on D3,
    `tuncat_peers` on D2, D4 and D5, `suite2p_runner.py`). On D2, D4 and D5, the paper reran the scripts of
    TUnCaT's paper-reproduction archive (`tuncat_peers`); the traces those scripts' authors released, in

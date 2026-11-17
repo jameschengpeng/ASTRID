@@ -241,6 +241,45 @@ def test_public_record_and_holm() -> None:
     assert "Suite2p" in T.public_markdown("ABO", record, s2p)
 
 
+
+def _grids(f1: np.ndarray) -> list[C.Grid]:
+    """One grid per video from F1 (videos, settings, thresholds); recall and precision equal to it."""
+    names, thr = [f"s{i}" for i in range(f1.shape[1])], np.arange(f1.shape[2], dtype=float)
+    return [C.Grid(names, thr, f, f, f, 0, 0) for f in f1]
+
+
+def test_cross_validation_by_recording(tmp_path: Path) -> None:
+    videos = list(D.ONE_PHOTON_VIDEOS)
+    assert [D.one_photon_recording(v) for v in videos[:3]] == ["c25", "c27", "c28"]
+    with pytest.raises(ValueError, match="sub-videos"):
+        D.one_photon_recording("501484643")
+    rng = np.random.default_rng(6)
+    f1 = 0.5 + 0.1 * rng.random((9, 3, 4))
+    loo = C.loo_cv(videos, _grids(f1))
+    alone = C.group_cv(videos, _grids(f1), videos)                  # one group per video: leave one out
+    assert alone.setting == loo.setting and np.array_equal(alone.f1, loo.f1)
+    # setting 1 is far better on c27's crops and slightly worse elsewhere: with the other c27 crops in training
+    # a c27 crop gets setting 1; held out with them, it gets setting 0
+    f1 = np.full((9, 2, 1), 0.6)
+    c27 = [i for i, v in enumerate(videos) if D.one_photon_recording(v) == "c27"]
+    f1[:, 1, 0] = 0.58
+    f1[c27, 1, 0] = 0.9
+    loo = C.loo_cv(videos, _grids(f1))
+    grouped = C.group_cv(videos, _grids(f1), [D.one_photon_recording(v) for v in videos])
+    assert [loo.setting[i] for i in c27] == ["s1"] * 3 and [grouped.setting[i] for i in c27] == ["s0"] * 3
+    assert grouped.f1[c27].tolist() == [0.6] * 3
+    for m, shift in (("ours", 0.0), ("TUnCaT", -0.01)):                # the table from grid files
+        for v, g in zip(videos, _grids(f1 + shift), strict=True):
+            C.save_grid(tmp_path / f"grid_{m}_{v}.npz", g)
+    assert T.main(["public", "--dataset", "1p", "--grids", str(tmp_path), "--folds", "recording",
+                   "--out", str(tmp_path / "out")]) == 0
+    record = json.loads((tmp_path / "out" / "cv_1p_by_recording.json").read_text(encoding="utf-8"))["table"]
+    assert [record["ours"]["setting"][i] for i in c27] == ["s0"] * 3
+    assert "by recording" in (tmp_path / "out" / "cv_1p_by_recording.md").read_text(encoding="utf-8")
+    with pytest.raises(SystemExit, match="D5"):
+        T.main(["public", "--dataset", "ABO", "--grids", str(tmp_path), "--folds", "recording",
+                "--out", str(tmp_path / "abo")])
+
 def test_public_grids_end_to_end(tmp_path: Path) -> None:
     rng = np.random.default_rng(5)
     arch = tmp_path / "archive"
