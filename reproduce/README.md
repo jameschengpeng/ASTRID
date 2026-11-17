@@ -131,8 +131,8 @@ were left out of the input of every method.
          --out <tables>                                                        # cv_1p_by_recording
      ```
    - **D3:** the correlation with the calcium predicted from the recorded spikes (`public_data.py`), scored two
-     ways, both reported. ASTRID's trace is ΔF/F0, its running baseline removed by the fit. As first scored,
-     every other trace has only its mean removed. With the same baseline, every other trace first has its own
+     ways, both reported. ASTRID's trace is ΔF/F0, its running baseline removed by the fit. In the published
+     scoring, every other trace has only its mean removed. With the same baseline, every other trace first has its own
      running baseline removed by ASTRID's rule (the 10th percentile of 1-s means in a moving 60-s window):
 
      ```bash
