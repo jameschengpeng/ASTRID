@@ -102,9 +102,11 @@ def draw_scores(ax: Any, dataset: str, table: dict[str, Any]) -> dict[str, Any]:
 
 def _traces(dataset: str, video: str, table: dict[str, Any], vi: int, archive: Path,
             ours: Sequence[str | Path], peers: Sequence[str | Path] | None, suite2p: str | Path,
-            masks: np.ndarray, cnmf_fill: D.CnmfFill | None) -> dict[str, tuple[np.ndarray, str, float, float]]:
+            masks: np.ndarray, cnmf_fill: D.CnmfFill | None, cnmf_grid: str | Path | None = None
+            ) -> dict[str, tuple[np.ndarray, str, float, float]]:
     """Each method's traces of the video at its chosen setting: method -> (traces, setting, threshold, the
-    table's F1 of the video)."""
+    table's F1 of the video). CNMF's come from its cross-validation grid (``cnmf_grid``, as tables_public reads
+    it) where the table chose its setting there."""
     record, s2p = table["record"], table["suite2p"]
     out: dict[str, tuple[np.ndarray, str, float, float]] = {}
     for m in ORDER:
@@ -117,6 +119,8 @@ def _traces(dataset: str, video: str, table: dict[str, Any], vi: int, archive: P
             x = video_ring(D.movie_path(archive, dataset, video), masks, D.UM_PER_PX[dataset])["trace"]
         elif m == "ours":
             x = D.ours_traces(list(ours), dataset, video)[setting]
+        elif m == "CNMF" and cnmf_grid is not None:
+            x = D.cnmf_grid_traces(cnmf_grid, dataset, video, masks=masks, cnmf_fill=cnmf_fill)[setting]
         else:
             x = D.peer_traces(list(peers) if peers else D.released_root(archive, dataset), m, video, masks=masks,
                               cnmf_fill=cnmf_fill)[setting]
@@ -146,7 +150,7 @@ def _window(ex: dict[str, Any], roi: int, n_eval: int, win: int) -> tuple[int, i
 
 def example(dataset: str, table: dict[str, Any], *, archive: str | Path, ours: Sequence[str | Path],
             peers: Sequence[str | Path] | None, suite2p: str | Path, evaluator: Evaluator,
-            cnmf_fill: D.CnmfFill | None = None) -> dict[str, Any]:
+            cnmf_fill: D.CnmfFill | None = None, cnmf_grid: str | Path | None = None) -> dict[str, Any]:
     """The example of one dataset by the rule of the module docstring: its video, ROI and window, and every
     method's scoring of the video ROI by ROI (``evaluator``)."""
     archive = Path(archive)
@@ -154,7 +158,7 @@ def example(dataset: str, table: dict[str, Any], *, archive: str | Path, ours: S
     vi = int(np.argmin(np.abs(f1 - np.median(f1))))
     video = table["videos"][vi]
     masks = D.read_masks(D.masks_path(archive, dataset, video))
-    raw = _traces(dataset, video, table, vi, archive, ours, peers, suite2p, masks, cnmf_fill)
+    raw = _traces(dataset, video, table, vi, archive, ours, peers, suite2p, masks, cnmf_fill, cnmf_grid)
     n = min(x.shape[1] for x, _, _, _ in raw.values())
     score = evaluator(dataset, video, str(archive))
     methods: dict[str, dict[str, Any]] = {}
@@ -284,7 +288,7 @@ def draw_traces(fig: Any, ex: dict[str, Any]) -> dict[str, Any]:
 
 def panels(dataset: str, table_path: str | Path, *, archive: str | Path, ours: Sequence[str | Path],
            peers: Sequence[str | Path] | None, suite2p: str | Path, evaluator: Evaluator,
-           cnmf_fill: D.CnmfFill | None = None) -> list[F.Panel]:
+           cnmf_fill: D.CnmfFill | None = None, cnmf_grid: str | Path | None = None) -> list[F.Panel]:
     """The dataset's row of Supplementary Fig. S4: (file stem, figure, record) for its scores, its example's
     image and its example's traces."""
     import matplotlib.pyplot as plt
@@ -295,7 +299,7 @@ def panels(dataset: str, table_path: str | Path, *, archive: str | Path, ours: S
     fig, ax = plt.subplots(figsize=(6.4, 4.4), layout="constrained")
     out = [(f"{scores_panel}_{tag}_scores", fig, draw_scores(ax, dataset, table))]
     ex = example(dataset, table, archive=archive, ours=ours, peers=peers, suite2p=suite2p, evaluator=evaluator,
-                 cnmf_fill=cnmf_fill)
+                 cnmf_fill=cnmf_fill, cnmf_grid=cnmf_grid)
     fig, ax = plt.subplots(figsize=(3.2, 3.4), layout="constrained")
     fig.supxlabel(name_of(dataset))
     out.append((f"{example_panel}_{tag}_image", fig, draw_image(ax, ex, mean_image(ex["movie"]))))

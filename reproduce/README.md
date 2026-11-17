@@ -169,10 +169,14 @@ typography, panel sizes and page layout are not part of it: the panels are drawn
 Run from this folder:
 
 ```bash
-# Figure 4 (D3): A, the correlation per cell; B, the example
-python -m astrid_repro.figures cai1 --table <tables>/cv_cai1.json --export <D3 export> --ours <root> [...]     --peers <folder> --suite2p <root> --out <figures>
+# Figure 4 (D3): A, the correlation per cell; B, the example. The table sets the scoring: the paper's Figure 4
+# is drawn from the equal-baseline table (cv_cai1_equal_baseline.json), and cv_cai1.json draws the first scoring
+python -m astrid_repro.figures cai1 --table <tables>/cv_cai1_equal_baseline.json --export <D3 export> \
+    --ours <root> [...] --peers <folder> --cnmf-grid <grid> --suite2p <root> --out <figures>
 # Supplementary Figure S4, one row per dataset: D2 (ABO: A, B), D4 (NAOMi: C, D), D5 (1p: E, F)
-python -m astrid_repro.figures public --dataset ABO --table <tables>/cv_ABO.json --archive <TUnCaT archive>     --ours <root> [...] --peers <root> [...] --suite2p <root>     --evaluator tuncat_eval.evaluation:view --cnmf-fill tuncat_eval.evaluation:cnmf_fill --out <figures>
+python -m astrid_repro.figures public --dataset ABO --table <tables>/cv_ABO.json --archive <TUnCaT archive> \
+    --ours <root> [...] --peers <root> [...] --cnmf-grid <grid> --suite2p <root> \
+    --evaluator tuncat_eval.evaluation:view --cnmf-fill tuncat_eval.evaluation:cnmf_fill --out <figures>
 ```
 
 The tables are those `tables_public` writes; the other paths are those given to it.

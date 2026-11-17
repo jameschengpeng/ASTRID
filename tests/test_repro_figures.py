@@ -311,3 +311,25 @@ def test_public_panels(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="in the table"):
         public.example("ABO", public.read_table(tmp_path / "bad.json", "ABO"), archive=p["archive"],
                        ours=p["ours"], peers=None, suite2p=p["suite2p"], evaluator=toy_view)
+
+
+def test_public_example_with_the_cnmf_grid(tmp_path: Path) -> None:
+    """CNMF's setting chosen on its cross-validation grid: its traces come from the grid (``cnmf_grid``, as
+    tables_public reads it), not from the fixed setting's folder."""
+    p = _public(tmp_path)
+    tab = json.loads(p["table"].read_text(encoding="utf-8"))
+    tab["table"]["CNMF"]["setting"] = ["gnb2_p1"] * len(p["videos"])
+    p["table"].write_text(json.dumps(tab), encoding="utf-8")
+    grid, rel = tmp_path / "grid", D.released_root(p["archive"], "ABO")
+    folder = grid / "gnb2_p1" / "ABO" / "traces_CNMF_Raw_p1"
+    folder.mkdir(parents=True)
+    for v in p["videos"]:
+        m = scipy.io.loadmat(rel / "traces_CNMF_Raw_p1" / f"{v}.mat")
+        scipy.io.savemat(folder / f"{v}.mat", {"C_gt": m["C_gt"], "YrA_gt": m["YrA_gt"]})
+    kw: dict[str, Any] = {"archive": p["archive"], "ours": p["ours"], "peers": None, "suite2p": p["suite2p"],
+                          "evaluator": toy_view}
+    table = public.read_table(p["table"], "ABO")
+    with pytest.raises(KeyError):
+        public.example("ABO", table, **kw)                           # not a setting of the fixed folder
+    ex = public.example("ABO", table, cnmf_grid=grid, **kw)
+    assert ex["methods"]["CNMF"]["setting"] == "gnb2_p1"
