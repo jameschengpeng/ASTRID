@@ -48,9 +48,14 @@ A port or a change of GPL-2 code keeps its license, so these folders are kept ap
 
 ## The route, per dataset
 
-Every method received the same movies and ROI masks. On D1, D6 and D7, ROIs within 5 pixels of the image edge, a
-margin left by registration, were not used as cases, and the pixels of this margin were left out of the input of
-every method.
+All methods received the same ROI masks and the same movie of each recording, with two differences in how they
+received them. Where the released masks of D2, D4 and D5 overlapped, ASTRID gave each shared pixel to the ROI with
+the nearest centroid, whereas the other methods used the masks as released. On D1, D6 and D7, FISSA, TUnCaT, CNMF
+and Suite2p were run on each ROI separately, on a crop of the movie that extended about 30 µm beyond the ROI,
+farther than the 16 µm margin of ASTRID's patch, and TUnCaT, CNMF and Suite2p also received the masks of the
+neighboring ROIs and, on D1 and D6, of the candidates within ASTRID's patch. On D1, D6 and D7, ROIs within 5
+pixels of the image edge, a margin left by registration, were not used as cases, and the pixels of this margin
+were left out of the input of every method.
 
 1. **Inputs.**
    - D2–D5 are public. D2 is ten Allen Brain Observatory experiments, cropped as TUnCaT cropped them
