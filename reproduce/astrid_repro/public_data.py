@@ -278,8 +278,9 @@ def read_cai1_fps(export: str | Path, name: str) -> float:
 
 def minus_baseline(x: np.ndarray, fps: float) -> np.ndarray:
     """A trace minus its running baseline under ASTRID's default rule (``astrid.patch.baseline``: the 10th
-    percentile of 1-s means in a moving 60-s window, interpolated to the frames), for D3's equal-baseline
-    scoring (``tables_public cai1 --baseline equal``). A trace with a non-finite frame is refused."""
+    percentile of 1-s means in a moving 60-s window, interpolated to the frames), for the equal-baseline
+    scorings of D3 (``tables_public cai1 --baseline equal``) and D6 (``stats d6-scores --baseline equal``). A trace
+    with a non-finite frame is refused."""
     y = np.asarray(x, dtype=np.float64)
     if not np.isfinite(y).all():
         raise ValueError("a trace with non-finite frames: its 1-s means are undefined there")

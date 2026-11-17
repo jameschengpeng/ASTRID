@@ -21,8 +21,11 @@ Commands (from ``reproduce/``: ``python -m astrid_repro.stats <command> --help``
 - ``ablations``: D1's ablations (``ablations``), full ASTRID against variants A, B and C, each from its own
   pooled scores (ASTRID's rows only; every variant must have exactly the full model's cases). Output:
   ``ablation_stats.json`` and ``.md``.
-- ``d6-scores``: D6's per-case scores of one recording from the traces (``d6_scores``); ``d6``: D6's table
-  from every recording's scores (``d6_tables``).
+- ``d6-scores``: D6's per-case scores of one recording from the traces (``d6_scores``) and the kept transient
+  size of each case (``d6_sizes``); ``d6``: D6's table from every recording's scores (``d6_tables``), with the
+  kept transient size (``d6_size_table``) where every recording has it. Both take ``--baseline``: ``reported``,
+  every trace as the method gives it, or ``equal`` (the paper's table), every trace but ASTRID's and the ring
+  subtraction's minus its own running baseline under ASTRID's rule (``D6_EQUAL_BASELINE``).
 - ``d7``: D7's table from every recording's per-case scores, with D7's failure rule (``d7_tables``).
 """
 
@@ -37,9 +40,11 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from scipy.signal import find_peaks
 from scipy.stats import wilcoxon
 
 from astrid_repro.metrics import holm, leakage, lowpass_fourier, usable, wilcoxon_p
+from astrid_repro.public_data import minus_baseline
 
 OURS = "demix"                         # ASTRID's rows in the score tables
 REFERENCE = ("roi",)                   # the raw ROI average: a reference row, no test
@@ -430,6 +435,28 @@ D6_COLUMNS = (("leakage in territory", "in", "leak_5hz"),          # (name, case
               ("leakage, all cases", "all", "leak_5hz"),
               ("r in territory (trace kept)", "in", "r_5hz"))           # higher is better
 D6_PRIMARY = "leakage in territory"
+D6_BASELINES = ("reported", "equal")
+D6_AS_IS = ("demix", "ring")           # F - F0 of each movie already: never given the equal baseline
+D6_EQUAL_BASELINE = ("every trace but ASTRID's and the ring subtraction's minus its own running baseline under "
+                     "ASTRID's rule (the 10th percentile of 1-s means in a moving 60-s window, interpolated to the "
+                     "frames), on each movie and in each case")
+D6_SCORE_FILES = {"reported": "scores.csv", "equal": "scores_equal.csv"}
+D6_SIZE_FILES = {"reported": "transient_size.csv", "equal": "transient_size_equal.csv"}
+# the kept transient size on R (descriptive)
+SIZE_BAND_HZ = 5.0                     # the scoring's low-pass
+SIZE_PROMINENCE = 4.0                  # times the raw ROI average's noise s.d.
+SIZE_DISTANCE_S = 2.0                  # s between peaks
+SIZE_RING_MAX = 0.2                    # the ring's amplitude over the raw ROI average's, at most
+SIZE_PEAK_HALF = 3                     # frames each side of the peak
+SIZE_BASE_S = (2.0, 0.5)               # s before the peak: the amplitude's baseline window
+SIZE_MIN_EVENTS = 3                    # neuron-only transients a case needs
+RING_FACTOR = 0.7                      # the ring subtraction's factor (astrid.patch.ring_trace)
+SIZE_CLASSES = ("in", "out", "all")
+
+
+def _check_d6_baseline(baseline: str) -> None:
+    if baseline not in D6_BASELINES:
+        raise ValueError(f"baseline must be one of {D6_BASELINES}, got {baseline!r}")
 
 
 def recording_arrays(z: Mapping[str, Any], key: str) -> list[np.ndarray]:
@@ -442,8 +469,12 @@ def recording_arrays(z: Mapping[str, Any], key: str) -> list[np.ndarray]:
     return [np.asarray(z[f"{key}__r{r}"]) for r in range(int(z[f"{key}__n"]))]
 
 
-def d6_traces(run: Path, movie: str, case: str) -> dict[str, np.ndarray | None]:
-    """Every method's trace of one case on one movie; None where it is missing."""
+def d6_traces(run: Path, movie: str, case: str, baseline: str = "reported",
+              fps: float = D6_FPS) -> dict[str, np.ndarray | None]:
+    """Every method's trace of one case on one movie, None where it is missing; with ``baseline`` "equal", every
+    usable trace but ASTRID's and the ring subtraction's minus its own running baseline under ASTRID's rule
+    (``public_data.minus_baseline``)."""
+    _check_d6_baseline(baseline)
     out: dict[str, np.ndarray | None] = dict.fromkeys(METHODS)
     p = run / movie / "ours" / f"{case}.npz"
     if p.exists():
@@ -458,6 +489,9 @@ def d6_traces(run: Path, movie: str, case: str) -> dict[str, np.ndarray | None]:
     if p.exists():
         with np.load(p) as z:
             out["suite2p"] = np.asarray(z["suite2p"], dtype=np.float64)
+    if baseline == "equal":
+        out = {m: minus_baseline(x, fps) if m not in D6_AS_IS and x is not None and usable(x) else x
+               for m, x in out.items()}
     return out
 
 
@@ -467,15 +501,16 @@ def pearson(x: np.ndarray, y: np.ndarray, f: float, fps: float = D6_FPS) -> floa
     return float(np.corrcoef(a, b)[0, 1]) if a.std() > 0 and b.std() > 0 else float("nan")
 
 
-def d6_scores(run: Path, fps: float = D6_FPS) -> pd.DataFrame:
+def d6_scores(run: Path, fps: float = D6_FPS, baseline: str = "reported") -> pd.DataFrame:
     """One recording's D6 scores, one row per case and method. Each method's trace on the one-color movie M is
-    compared with its own trace on the neuron movie R:
+    compared with its own trace on the neuron movie R (``d6_traces``, under ``baseline``):
     - ``leak_5hz``, ``leak_05hz``: the leakage of the real astrocyte channel (``metrics.leakage``: the change of
       the trace between the two movies over the channel's signal in the ROI, M's ROI average minus R's),
       below 5 Hz (the primary) and below 0.5 Hz;
     - ``r_5hz``, ``r_05hz``: the Pearson r of the two traces, the check that the neuron trace is kept.
     A trace that is missing, not finite or constant on either movie is a failure, scored leakage 1 (the raw
-    ROI's value) and r 0, never left out.
+    ROI's value) and r 0, never left out, and so is a trace that is constant after the low-pass (its r is
+    undefined).
 
     Inputs in ``run`` (one recording): ``run.json`` (``location``, ``recording``); ``M/compare/index.json`` (the
     cases: ``spec``, ``label``, ``territory`` ("in", "between" or "out"), ``territory_share``, ``neighbours``,
@@ -483,11 +518,12 @@ def d6_scores(run: Path, fps: float = D6_FPS) -> pd.DataFrame:
     ``X/ours/<case>.npz`` (ASTRID's ``delivered`` trace and the ring's ``ring_trace``),
     ``X/peers/<case>.npz`` (``astrid_repro.peers``; ``tuncat_raw_roi`` is the raw ROI) and
     ``X/suite2p/<case>.npz`` (``astrid_repro.suite2p_runner`` cases)."""
+    _check_d6_baseline(baseline)
     info = json.loads((run / "run.json").read_text())
     index = json.loads((run / "M" / "compare" / "index.json").read_text())
     rows = []
     for c in index:
-        tr = {m: d6_traces(run, m, c["spec"]) for m in D6_MOVIES}
+        tr = {m: d6_traces(run, m, c["spec"], baseline, fps) for m in D6_MOVIES}
         roi = {m: np.load(run / m / "compare" / f"{c['spec']}.npz")["roi_mean"] for m in D6_MOVIES}
         astro = roi["M"] - roi["R"]                                   # the astrocyte channel in the ROI
         for meth in METHODS:
@@ -507,6 +543,92 @@ def d6_scores(run: Path, fps: float = D6_FPS) -> pd.DataFrame:
                 row["leak" + k[1:]] = lk if np.isfinite(lk) else 1.0    # a failure scores 1
             rows.append(row)
     return pd.DataFrame(rows)
+
+
+def noise_sd(x: np.ndarray) -> float:
+    """A trace's noise per frame: 1.4826 x the median absolute deviation of its frame-to-frame differences over
+    sqrt 2."""
+    d = np.diff(np.asarray(x, dtype=np.float64))
+    return float(1.4826 * np.median(np.abs(d - np.median(d))) / np.sqrt(2))
+
+
+def amplitude(x: np.ndarray, p: int, fps: float = D6_FPS) -> float:
+    """The mean over the peak ± ``SIZE_PEAK_HALF`` frames minus the median over ``SIZE_BASE_S`` before it."""
+    b0, b1 = p - round(SIZE_BASE_S[0] * fps), p - round(SIZE_BASE_S[1] * fps)
+    return float(np.mean(x[p - SIZE_PEAK_HALF:p + SIZE_PEAK_HALF + 1]) - np.median(x[b0:b1]))
+
+
+def case_sizes(tr: Mapping[str, np.ndarray | None], roi_mean: np.ndarray, base: np.ndarray | None,
+               fps: float = D6_FPS) -> dict[str, float]:
+    """The kept transient size of every method in one case on R (``d6_sizes``), with the numbers of peaks and of
+    the neuron's own transients (``n_peaks``, ``n_events``); NaN where the case has fewer than
+    ``SIZE_MIN_EVENTS`` transients or the method's trace is not usable. ``tr``: the methods' traces on R,
+    ``roi_mean``: the ROI's mean trace on R, ``base``: ASTRID's ROI baseline on R (``baseline_roi``)."""
+    row: dict[str, float] = {"n_peaks": 0, "n_events": 0, **{f"tsize_{m}": float("nan") for m in METHODS}}
+    raw, ring_tr = tr["roi"], tr["ring"]
+    if raw is None or ring_tr is None or base is None or not usable(raw):
+        return row
+    lp = {m: lowpass_fourier(np.asarray(x, dtype=np.float64), fps, SIZE_BAND_HZ) for m, x in tr.items()
+          if x is not None and usable(x)}
+    ring = lowpass_fourier((np.asarray(roi_mean, dtype=np.float64) - base - ring_tr) / RING_FACTOR, fps,
+                           SIZE_BAND_HZ)
+    peaks, _ = find_peaks(lp["roi"], prominence=SIZE_PROMINENCE * noise_sd(raw),
+                          distance=round(SIZE_DISTANCE_S * fps))
+    peaks = [int(p) for p in peaks if p - round(SIZE_BASE_S[0] * fps) >= 0 and p + SIZE_PEAK_HALF < raw.size]
+    kept = []
+    for p in peaks:
+        a = amplitude(lp["roi"], p, fps)
+        if a > 0 and amplitude(ring, p, fps) <= SIZE_RING_MAX * a:
+            kept.append((p, a))
+    row["n_peaks"], row["n_events"] = len(peaks), len(kept)
+    if len(kept) >= SIZE_MIN_EVENTS:
+        for m, x in lp.items():
+            row[f"tsize_{m}"] = float(np.median([amplitude(x, p, fps) / a for p, a in kept]))
+    return row
+
+
+def d6_sizes(run: Path, fps: float = D6_FPS, baseline: str = "reported") -> pd.DataFrame:
+    """One recording's kept transient sizes on the neuron movie R, one row per case (descriptive): how large each
+    method keeps the neuron's own transients. They are the peaks of the raw ROI average low-passed below 5 Hz,
+    with a prominence of at least ``SIZE_PROMINENCE`` times its noise s.d. (``noise_sd``, of the unfiltered
+    trace) and at least ``SIZE_DISTANCE_S`` apart, at which the ring's amplitude is at most ``SIZE_RING_MAX``
+    times the raw ROI average's (the ring's mean recovered from the ROI average, ASTRID's ROI baseline and the
+    ring subtraction, divided by ``RING_FACTOR``). A transient's size in a trace is its ``amplitude`` (after the
+    same low-pass) over the raw ROI average's, and a method's size in a case is the median over the case's
+    transients. Traces as in ``d6_scores`` (``baseline``); inputs as there, with ASTRID's ``baseline_roi`` (a case
+    without it has no sizes)."""
+    info = json.loads((run / "run.json").read_text())
+    index = json.loads((run / "M" / "compare" / "index.json").read_text())
+    rows = []
+    for c in index:
+        roi_mean = np.load(run / "R" / "compare" / f"{c['spec']}.npz")["roi_mean"]
+        p = run / "R" / "ours" / f"{c['spec']}.npz"
+        base = None
+        if p.exists():
+            with np.load(p) as z:
+                if "baseline_roi" in z.files or "baseline_roi__n" in z.files:
+                    base = recording_arrays(z, "baseline_roi")[0]
+        rows.append({"location": info["location"], "recording": info["recording"], "case": c["spec"],
+                     "territory": c["territory"],
+                     **case_sizes(d6_traces(run, "R", c["spec"], baseline, fps), roi_mean, base, fps)})
+    return pd.DataFrame(rows)
+
+
+def d6_size_table(sizes: list[pd.DataFrame]) -> dict[str, Any]:
+    """The kept transient size over every recording (``d6_sizes``): the cases with at least ``SIZE_MIN_EVENTS``
+    transients, and per class ("in", "out", "all") and method each location's median over them, mean ± SD over
+    the locations."""
+    t = pd.concat(sizes, ignore_index=True)
+    used = t[t.n_events >= SIZE_MIN_EVENTS]
+    out: dict[str, Any] = {"cases": int(len(t)), "used": int(len(used)), "transients": int(used.n_events.sum()),
+                           "peaks": int(t.n_peaks.sum())}
+    for k in SIZE_CLASSES:
+        s = used if k == "all" else used[used.territory == k]
+        out[k] = {}
+        for m in METHODS:
+            loc = s.groupby("location")[f"tsize_{m}"].median()
+            out[k][m] = {"mean": float(loc.mean()), "sd": float(loc.std(ddof=1)), "locations": int(loc.notna().sum())}
+    return out
 
 
 def lower_is_better(value: str) -> bool:
@@ -607,6 +729,19 @@ def d6_markdown(record: dict[str, Any], name: str = "d6") -> str:
     lines += ["", "Locations: " + "; ".join(where) + ".",
               f"Cases by territory class (ASTRID's rows): {record['cases_by_class']}.",
               f"Failures (cases scored leakage 1 and r 0): {failed}.", ""]
+    if "baseline" in record:
+        lines += [f"Baseline: {record['baseline']}.", ""]
+    ts = record.get("transient_size")
+    if ts is not None:
+        lines += ["## Kept transient size on R (descriptive)", "",
+                  f"Each location's median over its cases with at least {SIZE_MIN_EVENTS} of the neuron's own "
+                  f"transients ({ts['used']} of {ts['cases']} cases, {ts['transients']} transients), mean ± SD over "
+                  "the locations; 1 keeps them at the size of the raw ROI average.", "",
+                  "| method | " + " | ".join(SIZE_CLASSES) + " |", "|---|" + "---|" * len(SIZE_CLASSES)]
+        for m in METHODS:
+            lines.append(f"| {NAMES[m]} | " + " | ".join(f"{ts[k][m]['mean']:.3f} ± {ts[k][m]['sd']:.3f}"
+                                                        for k in SIZE_CLASSES) + " |")
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -766,12 +901,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--variant", nargs="+", required=True, help="A=<folder> B=<folder> C=<folder>")
     p.add_argument("--suffix", default="")
     p.add_argument("--out", type=Path, required=True)
-    p = sub.add_parser("d6-scores", help="D6's per-case scores of one recording")
+    p = sub.add_parser("d6-scores", help="D6's per-case scores and kept transient sizes of one recording")
     p.add_argument("--run", type=Path, required=True, help="the recording's folder (see d6_scores)")
     p.add_argument("--fps", type=float, default=D6_FPS)
-    p.add_argument("--out", type=Path, default=None, help="the CSV to write (default <run>/scores.csv)")
+    p.add_argument("--baseline", choices=D6_BASELINES, default="reported",
+                   help=f"equal: {D6_EQUAL_BASELINE} (the paper's table)")
+    p.add_argument("--out", type=Path, default=None,
+                   help="the scores' CSV (default <run>/scores.csv, or scores_equal.csv); the sizes go to "
+                        "<run>/transient_size.csv (transient_size_equal.csv)")
     p = sub.add_parser("d6", help="D6's table from every recording's scores")
-    p.add_argument("--root", type=Path, required=True, help="the recordings' folders, each with scores.csv")
+    p.add_argument("--root", type=Path, required=True,
+                   help="the recordings' folders, each with the scores (and the sizes) of the baseline")
+    p.add_argument("--baseline", choices=D6_BASELINES, default="reported")
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--name", default="d6")
     p = sub.add_parser("d7", help="D7's table from every recording's per-case scores")
@@ -798,12 +939,22 @@ def main(argv: list[str] | None = None) -> int:
         text = ablation_markdown(record)
         (a.out / "ablation_stats.md").write_text(text, encoding="utf-8")
     elif a.command == "d6-scores":
-        s = d6_scores(a.run, a.fps)
-        s.to_csv(a.run / "scores.csv" if a.out is None else a.out, index=False)
-        text = "not ok: " + str(s[s.status != "ok"].groupby(["method", "status"]).size().to_dict())
+        s = d6_scores(a.run, a.fps, a.baseline)
+        s.to_csv(a.run / D6_SCORE_FILES[a.baseline] if a.out is None else a.out, index=False)
+        sizes = d6_sizes(a.run, a.fps, a.baseline)
+        sizes.to_csv(a.run / D6_SIZE_FILES[a.baseline], index=False)
+        text = (f"not ok: {s[s.status != 'ok'].groupby(['method', 'status']).size().to_dict()}; "
+                f"{int((sizes.n_events >= SIZE_MIN_EVENTS).sum())} of {len(sizes)} cases with transients")
     elif a.command == "d6":
-        files = sorted(a.root.glob("*/scores.csv"))
+        files = sorted(a.root.glob(f"*/{D6_SCORE_FILES[a.baseline]}"))
+        if not files:
+            raise SystemExit(f"no {D6_SCORE_FILES[a.baseline]} under {a.root}")
         record = d6_tables([pd.read_csv(f) for f in files])
+        if a.baseline == "equal":
+            record["baseline"] = D6_EQUAL_BASELINE
+        sizes = [f.parent / D6_SIZE_FILES[a.baseline] for f in files]
+        if all(p.exists() for p in sizes):
+            record["transient_size"] = d6_size_table([pd.read_csv(p, dtype={"case": str}) for p in sizes])
         write_json(a.out / f"{a.name}.json", record)
         text = d6_markdown(record, a.name)
         (a.out / f"{a.name}.md").write_text(text, encoding="utf-8")

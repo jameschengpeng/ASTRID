@@ -1,7 +1,8 @@
 """The injection and leakage tests of D1 and D7 (Supplementary, "Injection and leakage tests"): the rules that
 make the cases, the patch of a case, ASTRID's fit of it, the export of the cases for the peer methods and the
 per-case scores. ``astrid_repro.d1`` and ``astrid_repro.d7`` read each dataset's input files and run them
-(``run_tests``).
+(``run_tests``); ``astrid_repro.d6`` fits and exports D6's real ROIs, with nothing added, with the same patch, fit
+and export.
 
 D1 and D7 have no ground truth, so known signals are added to the real movie of one recording:
 - **the injection test** copies the spatial footprint and ΔF/F0 of a real ROI (a source) to free sites inside and
@@ -16,12 +17,12 @@ D1 and D7 have no ground truth, so known signals are added to the real movie of 
 **The rules** (``Rules``: D1's numbers by default; ``D7_RULES``). Lengths are in pixels of the movies' grid,
 about 2 um; ROI v is row v-1 of a recording's ΔF/F0; with several recordings, a ROI's SNR and percentile are
 means over them.
-- ``leakage_targets``: the ROIs of at least ``target_min_px`` pixels (D1 10, D7 no minimum) inside the
-  registration border with territory within ``NEAR_PX`` of them (outside the ROI), the most territory pixels
-  first, ties to the higher ``snr_proxy`` and then the higher label; the first ``LEAK_TARGETS``.
-- ``injection_sources``: the ROIs of at least ``source_min_px`` pixels (D1 20, D7 no minimum) inside the border,
-  with no AQuA2 event within ``SOURCE_CLEAR_PX`` and a usable footprint (``usable_source``), the highest 99th
-  percentile of ΔF/F0 first; the first ``SOURCES``.
+- ``leakage_targets``: the ROIs that lie wholly inside the registration border, of at least ``target_min_px``
+  pixels (D1 10, D7 no minimum), with territory within ``NEAR_PX`` of them (outside the ROI), the most territory
+  pixels first, ties to the higher ``snr_proxy`` and then the higher label; the first ``LEAK_TARGETS``.
+- ``injection_sources``: the ROIs that lie wholly inside the registration border, of at least ``source_min_px``
+  pixels (D1 20, D7 no minimum), with no AQuA2 event within ``SOURCE_CLEAR_PX`` and a usable footprint
+  (``usable_source``), the highest 99th percentile of ΔF/F0 first; the first ``SOURCES``.
 - ``free_sites``: up to ``SITES`` sites of each kind, in territory (a site pixel touched by at least
   ``site_min_events`` events: D1 4, D7 1) or away from it (no event within ``CONTROL_CLEAR_PX``); on D1 also an
   evidence of at least ``SITE_MIN_EVIDENCE`` in territory and below ``CONTROL_MAX_EVIDENCE`` away from it
@@ -363,7 +364,7 @@ class AstroInjection:
 @dataclass
 class Case:
     """A case of the tests: an injected neuron (``inject``), or a real ROI (``label``) with an astrocyte added
-    over it (``astro``)."""
+    over it (``astro``) or, on D6, as it is."""
     name: str
     label: int | None = None
     inject: Injection | None = None
@@ -371,7 +372,8 @@ class Case:
 
     @property
     def test(self) -> str:
-        return "injection" if self.inject is not None else "leakage"
+        """``injection``, ``leakage`` (an astrocyte added over a real ROI) or ``d6`` (a real ROI as it is)."""
+        return "injection" if self.inject is not None else "leakage" if self.astro is not None else "d6"
 
     @property
     def base(self) -> str:
@@ -684,6 +686,26 @@ def read_crops(movie: Any, boxes: Mapping[str, tuple[int, int, int, int]],
     return out
 
 
+def export_base(loc: Location, crop: np.ndarray, out: Path, base: str, roi: np.ndarray, exclude: int | None,
+                extra_atoms: Sequence[np.ndarray] = ()) -> tuple[tuple[slice, slice], int, int]:
+    """Write one base's ``<base>_movie.npy`` (its movie crop, ``read_crops``) and ``<base>_masks.npz`` (the ROI,
+    the neighbouring cells and astrocyte components of ASTRID's patch without the label ``exclude``, then
+    ``extra_atoms``, all cut by the crop, and the crop's box); returns the crop's slices and the numbers of
+    neighbours and atoms."""
+    r0, r1, c0, c1 = crop_box(loc, roi)
+    if crop.shape[1:] != (r1 - r0, c1 - c0):
+        raise ValueError(f"{base}: the crop is {crop.shape[1:]}, its box {(r1 - r0, c1 - c0)}")
+    np.save(out / f"{base}_movie.npy", crop)
+    cells, atoms = neighbours_and_atoms(loc, roi, exclude)
+    atoms = atoms + list(extra_atoms)
+    sl = (slice(r0, r1), slice(c0, c1))
+    np.savez_compressed(out / f"{base}_masks.npz", target=roi[sl],
+                        neighbours=np.array([m[sl] for m in cells]).reshape(-1, r1 - r0, c1 - c0),
+                        atoms=np.array([m[sl] for m in atoms]).reshape(-1, r1 - r0, c1 - c0),
+                        box=np.array([r0, r1, c0, c1]))
+    return sl, len(cells), len(atoms)
+
+
 def export_cases(loc: Location, crops: Mapping[str, np.ndarray], cases: Sequence[Case],
                  fits: Mapping[str, Path], out: Path) -> list[dict[str, Any]]:
     """Write every case in the case format of ``astrid_repro.peers`` into ``out`` and return the index rows
@@ -696,21 +718,10 @@ def export_cases(loc: Location, crops: Mapping[str, np.ndarray], cases: Sequence
     for c in cases:
         roi = c.roi(loc)
         if c.base not in done:
-            r0, r1, c0, c1 = crop_box(loc, roi)
             extra = []
             if c.astro is not None:
                 extra = [dilate(c.astro.shape, scaled(loc.field, ASTRO_SUPPORT_PX)) & patch_region(loc.field, roi)]
-            crop = crops[c.base]
-            if crop.shape[1:] != (r1 - r0, c1 - c0):
-                raise ValueError(f"{c.base}: the crop is {crop.shape[1:]}, its box {(r1 - r0, c1 - c0)}")
-            np.save(out / f"{c.base}_movie.npy", crop)
-            cells, atoms = neighbours_and_atoms(loc, roi, c.excluded())
-            sl = (slice(r0, r1), slice(c0, c1))
-            np.savez_compressed(out / f"{c.base}_masks.npz", target=roi[sl],
-                                neighbours=np.array([m[sl] for m in cells]).reshape(-1, r1 - r0, c1 - c0),
-                                atoms=np.array([m[sl] for m in atoms + extra]).reshape(-1, r1 - r0, c1 - c0),
-                                box=np.array([r0, r1, c0, c1]))
-            done[c.base] = (sl, len(cells), len(atoms) + len(extra))
+            done[c.base] = export_base(loc, crops[c.base], out, c.base, roi, c.excluded(), extra)
         sl, nc, na = done[c.base]
         with np.load(fits[c.test] / f"{c.name}.npz") as z:
             if c.inject is not None:
