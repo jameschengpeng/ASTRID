@@ -10,7 +10,7 @@ grid and in their orientation.
     the astrocyte territory is where it is at least 2;
   - ``tau`` (float64): the tagRFP evidence in [0, 1];
   - ``max_proj`` (float32): the mean over the location's recordings of their maximum projections, from which a
-    source's footprint is taken;
+    source's footprint is taken (in float32);
   - ``astro_label`` (int): the astrocyte ROIs as labels 1..m (0: none); astrocyte ROI k is row k-1 of every
     recording's ``astro_dff``;
   - ``fps`` (Hz), ``um_per_px`` (um per pixel), ``border_px`` (the registration border: pixels at the edge
@@ -39,7 +39,8 @@ must be D1's there. ``--variant`` runs one of the paper's ablations: A without a
   (``python -m astrid_repro.peers launch --cases <run>/compare ...``, results in ``compare/results``;
   ``suite2p_runner cases``, with results in a folder of their own);
 - ``scores/``: ``injection_scores.csv`` and ``leakage_scores.csv`` (``cases.injection_scores``,
-  ``cases.leakage_scores``), every method whose traces are there, and ``summary.txt``.
+  ``cases.leakage_scores``), every method whose traces are there, and ``summary.txt``
+(``cases.run_tests``).
 
 Run from ``reproduce/`` with one BLAS thread (``OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1``
 exported, as in the paper's runs: the last digits of the fits and the scores depend on the BLAS's summation
@@ -61,7 +62,6 @@ import argparse
 import dataclasses
 import json
 import os
-import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -73,7 +73,7 @@ import pandas as pd
 import yaml
 
 import astrid
-from astrid.api import Movie, load_pixels
+from astrid.api import Movie
 from astrid.patch import REFERENCE_UM_PER_PX
 from astrid_repro import cases as C
 
@@ -84,18 +84,15 @@ VARIANTS: dict[str, tuple[dict[str, float], bool]] = {   # (settings changed, as
 BLAS_THREADS = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")
 
 
-def say(text: str) -> None:
-    print(text, flush=True)
-
-
 # --------------------------------------------------------------------------------------------- the inputs
 def read_location(folder: str | Path) -> C.Location:
     """The location in ``<folder>/location.npz`` (module docstring)."""
     folder = Path(folder)
     with np.load(folder / LOCATION_FILE) as z:
         a = {k: z[k] for k in z.files}
-    loc = C.location(folder.name, a["neurons"], a["candidates"], a["events"], a["tau"], a["max_proj"],
-                     a["astro_label"], float(a["fps"]), float(a["um_per_px"]), int(a["border_px"]))
+    loc = C.location(folder.name, a["neurons"], a["candidates"], a["events"], a["tau"],
+                     np.asarray(a["max_proj"], dtype=np.float32), a["astro_label"], float(a["fps"]),
+                     float(a["um_per_px"]), int(a["border_px"]))
     return loc
 
 
@@ -173,83 +170,21 @@ def build_cases(loc: C.Location, rec: Recording,
 def run_recording(data: str | Path, location_name: str, recording: str, out: str | Path, *,
                   tests: Sequence[str] = C.TESTS, workers: int = 0, variant: str | None = None,
                   cases_dir: str | Path | None = None, config: str | Path = CONFIG,
-                  log: Callable[[str], Any] = say) -> Path:
+                  log: Callable[[str], Any] = C.say) -> Path:
     """Build, fit, export and score one recording's cases (module docstring); returns its run folder. With
     ``cases_dir`` (an earlier export of the same recording's cases), the cases are scored against it and not
     exported again."""
-    t0 = time.time()
     folder = Path(data) / location_name
     loc = read_location(folder)
     rec = read_recording(folder, recording, loc)
     settings, astro = d1_settings(loc, variant, config)
-    run = Path(out) / f"{location_name}_{recording}"
-    run.mkdir(parents=True, exist_ok=True)
     built, choices = build_cases(loc, rec, tests)
-    n_cases = {t: len(c) for t, c in built.items()}
-    log(f"{location_name} {recording}: {n_cases} cases; {choices}")
-    record = {"location": location_name, "recording": recording, "frames": rec.frames, "fps": loc.field.fps,
-              "tests": list(built), "variant": variant, "astro_components": astro, "astrid": astrid.__version__,
-              "settings": {t: s.as_dict() for t, s in settings.items() if t in built}, "choices": choices,
-              "cases": {t: [c.name for c in cs] for t, cs in built.items()}}
-    (run / "run.json").write_text(json.dumps(record, indent=1), encoding="utf-8")
-    every = [c for cs in built.values() for c in cs]
-    if every:
-        flat = np.unique(np.concatenate([C.case_flat(loc, c) for c in every]))
-        rule = settings["injection"].baseline_rule()
-        pixels = load_pixels([rec.movie()], loc.field.fps, flat, workers, rule, high_pass=False)
-        log(f"{flat.size} pixels read in {time.time() - t0:.0f} s")
-        for test, cs in built.items():
-            if not cs:
-                continue
-            params = settings[test].params(loc.field.fps)
-            log(f"{test}: {len(cs)} cases, at most {params.n_outer} iterations")
-            rows = C.fit_cases(loc, pixels, cs, params, run / test, astro_components=astro, workers=workers, log=log)
-            pd.DataFrame(rows).to_csv(run / test / "fits.csv", index=False)
-        del pixels
-    cases = Path(cases_dir) if cases_dir is not None else run / "compare"
-    if cases_dir is None:
-        ordered = [c for t in C.TESTS for c in built.get(t, [])]
-        with h5py.File(rec.path, "r") as f:
-            crops = C.read_crops(f["mov"], C.export_boxes(loc, ordered))
-        index = C.export_cases(loc, crops, ordered, {t: run / t for t in built}, cases)
-        C.write_index(cases, index)
-        log(f"{len(index)} cases exported to {cases}")
-    else:
-        index = json.loads((cases / "index.json").read_text())
-        mine = {c.name for cs in built.values() for c in cs}
-        theirs = {c["spec"] for c in index if c["test"] in built}
-        if mine != theirs:
-            raise ValueError(f"{cases}: its cases are not this recording's ({len(mine ^ theirs)} differ)")
-    score_run(run, cases, log=log)
-    log(f"done in {time.time() - t0:.0f} s -> {run}")
-    return run
-
-
-def score_run(run: str | Path, cases_dir: str | Path | None = None, results: Sequence[str | Path] | None = None,
-              log: Callable[[str], Any] = say) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Score a run folder (``run_recording``) into ``<run>/scores``: ASTRID and the ring subtraction from its
-    outputs, every peer method whose results are in ``results`` (default ``<cases>/results``), against the
-    cases in ``cases_dir`` (default ``<run>/compare``)."""
-    run = Path(run)
-    info = json.loads((run / "run.json").read_text(encoding="utf-8"))
-    cases = Path(cases_dir) if cases_dir is not None else run / "compare"
-    folders = [Path(r) for r in results] if results else [cases / "results"]
-    index = json.loads((cases / "index.json").read_text())
-    fps = float(info["fps"])
-    tests = info["tests"]
-    inj = (C.injection_scores(cases, run / "injection", index, fps, folders) if "injection" in tests
-           else pd.DataFrame())
-    leak = (C.leakage_scores(cases, run / "leakage", index, fps, folders) if "leakage" in tests
-            else pd.DataFrame())
-    scores = run / "scores"
-    scores.mkdir(parents=True, exist_ok=True)
-    for name, t in (("injection_scores.csv", inj), ("leakage_scores.csv", leak)):
-        if not t.empty:
-            t.to_csv(scores / name, index=False)
-    text = C.summary(inj, leak)
-    (scores / "summary.txt").write_text(text + "\n", encoding="utf-8")
-    log(text)
-    return inj, leak
+    log(f"{location_name} {recording}: {({t: len(c) for t, c in built.items()})} cases; {choices}")
+    record = {"location": location_name, "recording": recording, "frames": rec.frames, "variant": variant,
+              "choices": choices}
+    return C.run_tests(loc, rec.movie(), built, settings, Path(out) / f"{location_name}_{recording}", record,
+                       astro_components=astro, workers=workers,
+                       cases_dir=None if cases_dir is None else Path(cases_dir), log=log)
 
 
 def pool(root: str | Path, out: str | Path) -> dict[str, pd.DataFrame]:
@@ -303,7 +238,7 @@ def main(argv: list[str] | None = None) -> int:
         run_recording(a.data, a.location, a.recording, a.out, tests=a.tests, workers=a.workers, variant=a.variant,
                       cases_dir=a.cases)
     elif a.command == "score":
-        score_run(a.run, a.cases, a.results)
+        C.score_run(a.run, a.cases, a.results)
     else:
         tables = pool(a.root, a.out)
         print({k: len(v) for k, v in tables.items()}, "rows written to", a.out)

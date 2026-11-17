@@ -1,26 +1,33 @@
-"""The injection and leakage tests of D1 (Supplementary, "Injection and leakage tests"): the rules that make the
-cases, the patch of a case, ASTRID's fit of it, the export of the cases for the peer methods and the per-case
-scores.
+"""The injection and leakage tests of D1 and D7 (Supplementary, "Injection and leakage tests"): the rules that
+make the cases, the patch of a case, ASTRID's fit of it, the export of the cases for the peer methods and the
+per-case scores. ``astrid_repro.d1`` and ``astrid_repro.d7`` read each dataset's input files and run them
+(``run_tests``).
 
-D1 has no ground truth, so known signals are added to the real movie of one recording:
+D1 and D7 have no ground truth, so known signals are added to the real movie of one recording:
 - **the injection test** copies the spatial footprint and ΔF/F0 of a real ROI (a source) to free sites inside and
   away from astrocyte territory, at x1 and x3; the copy's ROI average is the truth;
-- **the leakage test** places the location's largest astrocyte ROI, with its ΔF/F0, over real ROIs near
-  territory, at x0, x1 and x3; the change of an ROI's trace from x0 is the leakage.
+- **the leakage test** places an astrocyte (on D1 the location's largest astrocyte ROI, on D7 the recording's
+  largest AQuA2 event), with its ΔF/F0, over real ROIs near territory, at x0, x1 and x3; the change of an ROI's
+  trace from x0 is the leakage.
 
-**The rules.** Lengths are in pixels of the movies' grid, about 2 um on D1; ROI v is row v-1 of a recording's
-ΔF/F0; with several recordings, a ROI's SNR and percentile are means over them.
-- ``leakage_targets``: the ROIs of at least ``TARGET_MIN_PX`` pixels inside the registration border with
-  territory within ``NEAR_PX`` of them (outside the ROI), the most territory pixels first, ties to the higher
-  ``snr_proxy`` and then the higher label; the first ``LEAK_TARGETS``.
-- ``injection_sources``: the ROIs of at least ``SOURCE_MIN_PX`` pixels inside the border, with no AQuA2 event
-  within ``SOURCE_CLEAR_PX`` and a usable footprint (``usable_source``), the highest 99th percentile of ΔF/F0
-  first; the first ``SOURCES``.
-- ``free_sites``: up to ``SITES`` sites of each kind, in strong territory (a site pixel touched by at least
-  ``SITE_MIN_EVENTS`` events, evidence at least ``SITE_MIN_EVIDENCE``) or away from it (no event within
-  ``CONTROL_CLEAR_PX``, evidence below ``CONTROL_MAX_EVIDENCE``). The field's pixels are drawn in a random order
-  (``SITE_SEED``) and a pixel is kept at least ``SITE_GAP_PX`` from the sites of its kind kept before, more than
-  ``SITE_CLEARANCE_PX`` from every ROI and candidate pixel, and ``SITE_INSET_PX`` inside the field.
+**The territory** (``Location``) is the pixels touched by at least ``territory_min_events`` AQuA2 events: on D1
+2 over all recordings of the imaging location, on D7 1 of the recording's own.
+
+**The rules** (``Rules``: D1's numbers by default; ``D7_RULES``). Lengths are in pixels of the movies' grid,
+about 2 um; ROI v is row v-1 of a recording's ΔF/F0; with several recordings, a ROI's SNR and percentile are
+means over them.
+- ``leakage_targets``: the ROIs of at least ``target_min_px`` pixels (D1 10, D7 no minimum) inside the
+  registration border with territory within ``NEAR_PX`` of them (outside the ROI), the most territory pixels
+  first, ties to the higher ``snr_proxy`` and then the higher label; the first ``LEAK_TARGETS``.
+- ``injection_sources``: the ROIs of at least ``source_min_px`` pixels (D1 20, D7 no minimum) inside the border,
+  with no AQuA2 event within ``SOURCE_CLEAR_PX`` and a usable footprint (``usable_source``), the highest 99th
+  percentile of ΔF/F0 first; the first ``SOURCES``.
+- ``free_sites``: up to ``SITES`` sites of each kind, in territory (a site pixel touched by at least
+  ``site_min_events`` events: D1 4, D7 1) or away from it (no event within ``CONTROL_CLEAR_PX``); on D1 also an
+  evidence of at least ``SITE_MIN_EVIDENCE`` in territory and below ``CONTROL_MAX_EVIDENCE`` away from it
+  (``site_evidence``). The field's pixels are drawn in a random order (``SITE_SEED``) and a pixel is kept at
+  least ``SITE_GAP_PX`` from the sites of its kind kept before, more than ``SITE_CLEARANCE_PX`` from every ROI
+  and candidate pixel, and ``SITE_INSET_PX`` inside the field.
 - ``injection``: the source's ROI and footprint moved so that the ROI's centroid lies on the site (rounded to
   whole pixels), carrying the source's ΔF/F0 times the scale. ``injection_cases``: the sources serve the sites
   in turn, the territory sites first, and x1 and x3 at a site share a source.
@@ -29,11 +36,11 @@ D1 has no ground truth, so known signals are added to the real movie of one reco
   least ``MIN_COVER`` of the ROI, the direction whose moved astrocyte lies most in territory (the first on
   ties); with no such distance, the placement with the largest cover.
 
-**Footprints.** A source's footprint (``source_footprint``) is its profile in the location's maximum projection:
-the projection minus the median over the ring of pixels more than ``PROFILE_RING_PX[0]`` and at most
-``PROFILE_RING_PX[1]`` from the ROI that belong to no ROI, set to zero where negative and outside the ROI
-dilated by 1 pixel, normalized to sum 1 (float32, as the projection). An astrocyte's footprint is its mask
-smoothed by a Gaussian of s.d. 1 pixel and set to zero outside the mask, normalized to sum 1.
+**Footprints.** A source's footprint (``source_footprint``) is its profile in the maximum projection
+(``Location.max_proj``, in its own precision): the projection minus the median over the ring of pixels more
+than ``PROFILE_RING_PX[0]`` and at most ``PROFILE_RING_PX[1]`` from the ROI that belong to no ROI, set to zero
+where negative and outside the ROI dilated by 1 pixel, normalized to sum 1. An astrocyte's footprint is its
+mask smoothed by a Gaussian of s.d. 1 pixel and set to zero outside the mask, normalized to sum 1.
 
 **The patch of a case** (``build_case``) is ``astrid.patch``'s patch of the case's ROI: an injected ROI's patch
 leaves no ROI out of its neighbours, and a leakage target's leaves out the target's own label. The added
@@ -45,7 +52,8 @@ addition (``astrid.api.load_pixels``), and the noise covariance Sigma from the d
 astrocyte is one more astrocyte component, ``A-inj``, placed before the local neuropil, on its mask dilated by
 ``ASTRO_SUPPORT_PX`` within the patch, and the evidence is raised to at least ``EVIDENCE_FLOOR`` over its mask.
 ``astro_components=False`` (the paper's ablation A) leaves out every astrocyte component, ``A-inj`` included;
-the added signals and the evidence stay as they are.
+the added signals and the evidence stay as they are. Without an evidence map (D7) the raised evidence has no
+effect.
 
 **The fit** (``fit_case``): ``astrid.solver.fit`` with the settings' parameters, at most 600 iterations in the
 injection test and 2,000 in the leakage test (``reproduce/datasets.yaml``). Its outputs, per case (one row per
@@ -62,8 +70,11 @@ neighbouring ROIs and candidate pieces of ASTRID's patch (undilated, cut by the 
 components (in a leakage case with the added astrocyte's support); per case the added footprint and amplitude,
 with the truth or the astrocyte's ROI average.
 
-**The scores** (``injection_scores``, ``leakage_scores``), the columns ``stats.py d1`` reads, with the means
-removed from every trace:
+**The run** of one recording (``run_tests``): its cases fitted (``fit_cases``), exported (``export_cases``) and
+scored (``score_run``) into one folder, the layout of ``astrid_repro.d1`` (its docstring) and ``d7``.
+
+**The scores** (``injection_scores``, ``leakage_scores``), the columns ``stats.py d1`` and ``d7`` read, at the
+recording's frame rate, with the means removed from every trace:
 - injection, per case and method: ``corr`` (Pearson), ``gain`` (the slope of the trace on the truth) and the
   errors ||y - q|| / ||q|| unfiltered, below 2 Hz and below 0.5 Hz (``err_raw``, ``err_2hz``, ``err_05hz``);
 - leakage, per target, scale (> 0) and method: ``leak`` and ``leak_05hz`` (||y+ - y0|| / ||q||, unfiltered and
@@ -84,12 +95,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import h5py
 import numpy as np
 import pandas as pd
 from scipy import ndimage as ndi
 
+import astrid
 from astrid import kernels
-from astrid.api import FORK
+from astrid.api import FORK, Movie, load_pixels
 from astrid.model import Component, Params, Patch
 from astrid.noise import noise_covariance
 from astrid.outputs import demixed_trace
@@ -117,7 +130,7 @@ from astrid.patch import (
 from astrid.solver import fit
 from astrid_repro.metrics import lowpass_fourier
 
-TERRITORY_MIN_EVENTS = 2            # territory: pixels touched by at least 2 AQuA2 events (astrid.patch's rule)
+TERRITORY_MIN_EVENTS = 2            # D1's territory: pixels touched by at least 2 AQuA2 events
 TARGET_MIN_PX = 10                  # leakage targets
 NEAR_PX = 3                         # territory within 3 px of a leakage target
 LEAK_TARGETS = 10
@@ -147,14 +160,29 @@ PEER_KEYS = {"fissa": "fissa", "tuncat": "tuncat", "tuncat_astro": "tuncat_astro
 BANDS = {"raw": None, "2hz": 2.0, "05hz": 0.5}
 
 
+@dataclass(frozen=True)
+class Rules:
+    """The numbers in which the rules of D1 and D7 differ (module docstring); the defaults are D1's."""
+    target_min_px: int = TARGET_MIN_PX
+    source_min_px: int = SOURCE_MIN_PX
+    site_min_events: int = SITE_MIN_EVENTS
+    site_evidence: bool = True
+
+
+D1_RULES = Rules()
+D7_RULES = Rules(target_min_px=0, source_min_px=0, site_min_events=1, site_evidence=False)
+
+
 # --------------------------------------------------------------------------------------------- the location
 @dataclass
 class Location:
-    """One imaging location as the tests read it: ``field`` (``astrid.patch.Field``: the ROIs as labels 1..n,
-    the candidate pieces, the territory, the evidence, the frame rate, the pixel scale and the border), the
-    number of AQuA2 events that touch each pixel over the location's recordings (``events``), the mean of the
-    recordings' maximum projections (``max_proj``, float32) and the astrocyte ROIs (``astro_label``, labels
-    1..m, 0 for none)."""
+    """The field of the tests: ``field`` (``astrid.patch.Field``: the ROIs as labels 1..n, the candidate pieces,
+    the territory, the evidence, the frame rate, the pixel scale and the border), the number of AQuA2 events
+    that touch each pixel (``events``; on D1 over the location's recordings, on D7 the recording's own), the
+    maximum projection from which the sources' footprints are taken (``max_proj``; on D1 the mean of the
+    recordings' projections, in float32; on D7 the recording's own, in float64) and the astrocytes
+    (``astro_label``, labels 1..m, 0 for none: on D1 the astrocyte ROIs, on D7 the recording's largest
+    event)."""
     field: Field
     events: np.ndarray
     max_proj: np.ndarray
@@ -173,31 +201,34 @@ class Location:
         return self.field.shape
 
 
-def location(name: str, neurons: np.ndarray, candidates: np.ndarray, events: np.ndarray, tau: np.ndarray,
-             max_proj: np.ndarray, astro_label: np.ndarray, fps: float, um_per_px: float,
-             border_px: int) -> Location:
+def location(name: str, neurons: np.ndarray, candidates: np.ndarray, events: np.ndarray, tau: np.ndarray | None,
+             max_proj: np.ndarray, astro_label: np.ndarray, fps: float, um_per_px: float, border_px: int, *,
+             territory_min_events: int = TERRITORY_MIN_EVENTS) -> Location:
     """A ``Location`` from its arrays (all (H, W)): the territory is the pixels touched by at least
-    ``TERRITORY_MIN_EVENTS`` events, the candidates are relabelled as 4-connected pieces, and the evidence map
-    is the tagRFP evidence ``tau`` in [0, 1]."""
+    ``territory_min_events`` events, the candidates are relabelled as 4-connected pieces, and the evidence map
+    is the tagRFP evidence ``tau`` in [0, 1] (None: no evidence map, as on D7). ``max_proj`` keeps its dtype."""
     neurons = np.asarray(neurons)
     shape = (int(neurons.shape[0]), int(neurons.shape[1]))
-    arrays = {"candidates": candidates, "events": events, "tau": tau, "max_proj": max_proj,
-              "astro_label": astro_label}
+    arrays = {"candidates": candidates, "events": events, "max_proj": max_proj, "astro_label": astro_label}
+    if tau is not None:
+        arrays["tau"] = tau
     for what, a in arrays.items():
         if np.shape(a) != shape:
             raise ValueError(f"{name}: {what} is {np.shape(a)}, the ROIs {shape}")
     if not np.issubdtype(neurons.dtype, np.integer) or neurons.min() < 0:
         raise ValueError(f"{name}: neurons must be integer labels >= 0")
-    tau = np.asarray(tau, dtype=np.float64)
+    evidence = tau is not None
+    tau = np.zeros(shape) if tau is None else np.asarray(tau, dtype=np.float64)
     if not np.all(np.isfinite(tau)) or tau.min() < 0 or tau.max() > 1:
         raise ValueError(f"{name}: the evidence tau must lie in [0, 1]")
     events = np.asarray(events)
     if not np.array_equal(events, np.round(events)) or events.min() < 0:
         raise ValueError(f"{name}: events must be counts")
     labels, _ = ndi.label(np.asarray(candidates) > 0, structure=FOUR)
-    fld = Field(name, shape, neurons, labels, events >= TERRITORY_MIN_EVENTS, tau, float(fps),
-                px_scale=REFERENCE_UM_PER_PX / float(um_per_px), tagrfp_channel=True, border_px=int(border_px))
-    return Location(fld, events, np.asarray(max_proj, dtype=np.float32), np.asarray(astro_label))
+    fld = Field(name, shape, neurons, labels, events >= territory_min_events, tau, float(fps),
+                px_scale=REFERENCE_UM_PER_PX / float(um_per_px), tagrfp_channel=evidence,
+                border_px=int(border_px))
+    return Location(fld, events, np.asarray(max_proj), np.asarray(astro_label))
 
 
 def largest_astrocyte(astro_label: np.ndarray) -> int:
@@ -213,13 +244,14 @@ def snr_proxy(dff: np.ndarray) -> float:
     return float((np.percentile(dff, 99) - np.median(dff)) / max(noise, 1e-12))
 
 
-def leakage_targets(loc: Location, dff: Mapping[str, np.ndarray], n: int = LEAK_TARGETS) -> list[int]:
+def leakage_targets(loc: Location, dff: Mapping[str, np.ndarray], n: int = LEAK_TARGETS,
+                    min_px: int = TARGET_MIN_PX) -> list[int]:
     """The leakage test's ROIs (module docstring); ``dff``: recording -> (n_rois, T) ΔF/F0."""
     score = []
     terr = loc.field.territory
     for v in range(1, int(loc.neurons.max()) + 1):
         roi = loc.neurons == v
-        if roi.sum() < TARGET_MIN_PX or (roi & ~loc.inner).any():
+        if roi.sum() < min_px or (roi & ~loc.inner).any():
             continue
         near = dilate(roi, NEAR_PX) & ~roi
         active = int(terr[near].sum())
@@ -253,13 +285,14 @@ def source_footprint(loc: Location, label: int) -> tuple[np.ndarray, np.ndarray]
     return roi, prof / prof.sum()
 
 
-def injection_sources(loc: Location, dff: Mapping[str, np.ndarray], n: int = SOURCES) -> list[int]:
+def injection_sources(loc: Location, dff: Mapping[str, np.ndarray], n: int = SOURCES,
+                      min_px: int = SOURCE_MIN_PX) -> list[int]:
     """The injection test's sources (module docstring); may be empty, and then there are no injections."""
     cand = []
     events = loc.events > 0
     for v in range(1, int(loc.neurons.max()) + 1):
         roi = loc.neurons == v
-        if roi.sum() < SOURCE_MIN_PX or (dilate(roi, SOURCE_CLEAR_PX) & events).any() or (roi & ~loc.inner).any():
+        if roi.sum() < min_px or (dilate(roi, SOURCE_CLEAR_PX) & events).any() or (roi & ~loc.inner).any():
             continue
         if not usable_source(loc, v):
             continue
@@ -268,16 +301,24 @@ def injection_sources(loc: Location, dff: Mapping[str, np.ndarray], n: int = SOU
 
 
 def free_sites(loc: Location, in_territory: bool, n: int = SITES, min_gap: float = SITE_GAP_PX,
-               clearance: float = SITE_CLEARANCE_PX, seed: int = SITE_SEED) -> list[tuple[int, int]]:
-    """Up to ``n`` injection sites (row, col) of one kind (module docstring), in the order they were kept."""
+               clearance: float = SITE_CLEARANCE_PX, seed: int = SITE_SEED, min_events: int = SITE_MIN_EVENTS,
+               evidence: bool = True) -> list[tuple[int, int]]:
+    """Up to ``n`` injection sites (row, col) of one kind (module docstring), in the order they were kept;
+    ``evidence`` False leaves the evidence conditions out."""
+    if n <= 0:
+        return []
     fld = loc.field
     occupied = dilate((fld.neurons > 0) | (fld.candidates > 0), clearance)
     keep = np.zeros(fld.shape, dtype=bool)
     keep[SITE_INSET_PX:-SITE_INSET_PX, SITE_INSET_PX:-SITE_INSET_PX] = True
     if in_territory:
-        ok = keep & ~occupied & (loc.events >= SITE_MIN_EVENTS) & (fld.tau >= SITE_MIN_EVIDENCE)
+        ok = keep & ~occupied & (loc.events >= min_events)
+        if evidence:
+            ok &= fld.tau >= SITE_MIN_EVIDENCE
     else:
-        ok = keep & ~occupied & ~dilate(loc.events > 0, CONTROL_CLEAR_PX) & (fld.tau < CONTROL_MAX_EVIDENCE)
+        ok = keep & ~occupied & ~dilate(loc.events > 0, CONTROL_CLEAR_PX)
+        if evidence:
+            ok &= fld.tau < CONTROL_MAX_EVIDENCE
     pts = np.argwhere(ok)
     rng = np.random.default_rng(seed)
     pts = pts[rng.permutation(len(pts))]
@@ -400,11 +441,14 @@ def astro_injection(loc: Location, source: int, astro_dff: Mapping[str, np.ndarr
                           f"A-{source:02d}", scale, shift)
 
 
-def injection_cases(loc: Location, dff: Mapping[str, np.ndarray]) -> tuple[list[Case], dict[str, Any]]:
+def injection_cases(loc: Location, dff: Mapping[str, np.ndarray],
+                    rules: Rules = D1_RULES) -> tuple[list[Case], dict[str, Any]]:
     """The injection test's cases of one recording (``dff``: recording -> its ΔF/F0), and the choices made:
     the sources and the sites (row, col, kind)."""
-    sources = injection_sources(loc, dff, SOURCES)
-    sites = [(s, True) for s in free_sites(loc, True, SITES)] + [(s, False) for s in free_sites(loc, False, SITES)]
+    sources = injection_sources(loc, dff, SOURCES, rules.source_min_px)
+    kw = {"min_events": rules.site_min_events, "evidence": rules.site_evidence}
+    sites = [(s, True) for s in free_sites(loc, True, SITES, **kw)]
+    sites += [(s, False) for s in free_sites(loc, False, SITES, **kw)]
     if not sources:
         sites = []
     cases = [Case(f"inj{j:02d}-{'astro' if astro else 'ctrl'}-x{scale:g}",
@@ -415,10 +459,11 @@ def injection_cases(loc: Location, dff: Mapping[str, np.ndarray]) -> tuple[list[
 
 
 def leakage_cases(loc: Location, dff: Mapping[str, np.ndarray], astro_dff: Mapping[str, np.ndarray],
-                  source: int) -> tuple[list[Case], dict[str, Any]]:
-    """The leakage test's cases of one recording: astrocyte ROI ``source`` (``astro_dff``: recording -> its
-    ΔF/F0) over each target at x0, x1 and x3; and the choices: the targets and the astrocyte's shifts."""
-    targets = leakage_targets(loc, dff, LEAK_TARGETS)
+                  source: int, rules: Rules = D1_RULES) -> tuple[list[Case], dict[str, Any]]:
+    """The leakage test's cases of one recording: astrocyte ``source`` (a label of ``Location.astro_label``;
+    ``astro_dff``: recording -> its ΔF/F0) over each target at x0, x1 and x3; and the choices: the targets and
+    the astrocyte's shifts."""
+    targets = leakage_targets(loc, dff, LEAK_TARGETS, rules.target_min_px)
     cases, shifts = [], {}
     for v in targets:
         for s in LEAK_SCALES:
@@ -689,6 +734,87 @@ def export_cases(loc: Location, crops: Mapping[str, np.ndarray], cases: Sequence
 
 def write_index(out: Path, index: list[dict[str, Any]]) -> None:
     (out / "index.json").write_text(json.dumps(index, indent=1))
+
+
+# --------------------------------------------------------------------------------------------- one recording
+def say(text: str) -> None:
+    print(text, flush=True)
+
+
+def run_tests(loc: Location, movie: Movie, built: Mapping[str, list[Case]], settings: Mapping[str, astrid.Settings],
+              run: Path, record: Mapping[str, Any], *, astro_components: bool = True, workers: int = 0,
+              cases_dir: Path | None = None, log: Callable[[str], Any] = say) -> Path:
+    """One recording's tests into ``run``: ``run.json`` (``record`` with the tests, the settings and the cases),
+    the fits of each test's cases (``<test>/<case>.npz``, ``<test>/fits.csv``) with the test's settings, the
+    export (``compare/``) and the scores (``scores/``). ``movie`` is the recording's movie in an HDF5 file
+    (``astrid.api.Movie``); the pixels' baselines and weights follow the injection test's settings. With
+    ``cases_dir`` (an earlier export of the same cases) the cases are scored against it and not exported."""
+    t0 = time.time()
+    run.mkdir(parents=True, exist_ok=True)
+    info = {**record, "tests": list(built), "fps": loc.field.fps, "astro_components": astro_components,
+            "astrid": astrid.__version__, "settings": {t: s.as_dict() for t, s in settings.items() if t in built},
+            "cases": {t: [c.name for c in cs] for t, cs in built.items()}}
+    (run / "run.json").write_text(json.dumps(info, indent=1), encoding="utf-8")
+    every = [c for cs in built.values() for c in cs]
+    if every:
+        flat = np.unique(np.concatenate([case_flat(loc, c) for c in every]))
+        rule = settings["injection"].baseline_rule()
+        pixels = load_pixels([movie], loc.field.fps, flat, workers, rule, high_pass=False)
+        log(f"{flat.size} pixels read in {time.time() - t0:.0f} s")
+        for test, cs in built.items():
+            if not cs:
+                continue
+            params = settings[test].params(loc.field.fps)
+            log(f"{test}: {len(cs)} cases, at most {params.n_outer} iterations")
+            rows = fit_cases(loc, pixels, cs, params, run / test, astro_components=astro_components,
+                             workers=workers, log=log)
+            pd.DataFrame(rows).to_csv(run / test / "fits.csv", index=False)
+        del pixels
+    cases = run / "compare" if cases_dir is None else Path(cases_dir)
+    if cases_dir is None:
+        ordered = [c for t in TESTS for c in built.get(t, [])]
+        assert movie.path is not None
+        with h5py.File(movie.path, "r") as f:
+            crops = read_crops(f[movie.key or "mov"], export_boxes(loc, ordered))
+        index = export_cases(loc, crops, ordered, {t: run / t for t in built}, cases)
+        write_index(cases, index)
+        log(f"{len(index)} cases exported to {cases}")
+    else:
+        index = json.loads((cases / "index.json").read_text())
+        mine = {c.name for c in every}
+        theirs = {c["spec"] for c in index if c["test"] in built}
+        if mine != theirs:
+            raise ValueError(f"{cases}: its cases are not this recording's ({len(mine ^ theirs)} differ)")
+    score_run(run, cases, log=log)
+    log(f"done in {time.time() - t0:.0f} s -> {run}")
+    return run
+
+
+def score_run(run: str | Path, cases_dir: str | Path | None = None, results: Sequence[str | Path] | None = None,
+              log: Callable[[str], Any] = say) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Score a run folder (``run_tests``) into ``<run>/scores``: ASTRID and the ring subtraction from its
+    outputs, every peer method whose results are in ``results`` (default ``<cases>/results``), against the
+    cases in ``cases_dir`` (default ``<run>/compare``), at the recording's frame rate."""
+    run = Path(run)
+    info = json.loads((run / "run.json").read_text(encoding="utf-8"))
+    cases = Path(cases_dir) if cases_dir is not None else run / "compare"
+    folders = [Path(r) for r in results] if results else [cases / "results"]
+    index = json.loads((cases / "index.json").read_text())
+    fps = float(info["fps"])
+    tests = info["tests"]
+    inj = (injection_scores(cases, run / "injection", index, fps, folders) if "injection" in tests
+           else pd.DataFrame())
+    leak = (leakage_scores(cases, run / "leakage", index, fps, folders) if "leakage" in tests
+            else pd.DataFrame())
+    scores = run / "scores"
+    scores.mkdir(parents=True, exist_ok=True)
+    for name, t in (("injection_scores.csv", inj), ("leakage_scores.csv", leak)):
+        if not t.empty:
+            t.to_csv(scores / name, index=False)
+    text = summary(inj, leak)
+    (scores / "summary.txt").write_text(text + "\n", encoding="utf-8")
+    log(text)
+    return inj, leak
 
 
 # --------------------------------------------------------------------------------------------- the scores
