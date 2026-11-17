@@ -1,6 +1,6 @@
 """The figure code on small synthetic data: the shared plot of the scores, Figure 4's panels (D3) from a table,
-an export and traces made here, and one row of Supplementary Figure S4 with a toy scoring in place of TUnCaT's
-evaluation (which is GPL-2 and tested in its own folder)."""
+an export and traces made here, and one row of the supplementary figure of D2, D4 and D5 with a toy scoring in
+place of TUnCaT's evaluation (which is GPL-2 and tested in its own folder)."""
 
 from __future__ import annotations
 
@@ -287,7 +287,7 @@ def test_public_panels(tmp_path: Path) -> None:
     p = _public(tmp_path)
     made = public.panels("ABO", p["table"], archive=p["archive"], ours=p["ours"], peers=None, suite2p=p["suite2p"],
                          evaluator=toy_view)
-    assert [stem for stem, _, _ in made] == ["figS4a_D2_scores", "figS4b_D2_image", "figS4b_D2_traces"]
+    assert [stem for stem, _, _ in made] == ["figS6a_D2_scores", "figS6b_D2_image", "figS6b_D2_traces"]
     scores, image, traces = (rec for _, _, rec in made)
     table = public.read_table(p["table"], "ABO")
     f1 = np.asarray(table["values"]["ours"])

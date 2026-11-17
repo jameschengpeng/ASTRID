@@ -12,7 +12,7 @@ its own `LICENSE`, because they derive from the GPL-2 code of TUnCaT (Bao et al.
 https://github.com/YijunBao/TUnCaT):
 - `tuncat_eval/`, the F1 scorer of D2, D4 and D5, a line-by-line port of TUnCaT's MATLAB evaluation code. The
   `astrid` package and `astrid_repro` never import it; it is handed to them at run time (below), as the scorer of
-  the tables and, scored ROI by ROI, to the example panels of Supplementary Fig. S4;
+  the tables and, scored ROI by ROI, to the example panels of the supplementary figure of D2, D4 and D5;
 - `tuncat_peers/`, which stages the scripts of TUnCaT's paper-reproduction archive with the changes the paper's
   runs made to them and runs FISSA, TUnCaT and CNMF on D2, D4 and D5 (`python -m tuncat_peers`).
 A port or a change of GPL-2 code keeps its license, so these folders are kept apart from the MIT code.
@@ -31,7 +31,7 @@ A port or a change of GPL-2 code keeps its license, so these folders are kept ap
 | `astrid_repro/cai1_export.py`, `cai1_rois/` | D3: the export every method read, built from the CRCNS download (the frames placed on the processed traces' grid, rigid registration, 4 × 4 binning, the scored frames, the spike-predicted calcium), with the ROI of each cell, drawn by hand once, blind to all methods |
 | `astrid_repro/stats.py` | the tables of D1 (ASTRID against seven methods), the ablations, D6 (its per-recording scoring and table) and D7 (by recording and by location) |
 | `astrid_repro/public_data.py`, `ring.py`, `cv.py`, `tables_public.py` | D2–D5: the readers of the public data and of their ground truth, the ring subtraction, the leave-one-out cross-validation over settings and detection thresholds, the tables |
-| `astrid_repro/figures/` | the data panels of the paper's figures, drawn from the outputs above: Figure 4 (`cai1.py`) and Supplementary Figure S4 (`public.py`), with the rules that chose their examples (section "Figures" below) |
+| `astrid_repro/figures/` | the data panels of the paper's figures, drawn from the outputs above: Figure 4 (`cai1.py`) and Supplementary Figure S6 (`public.py`, D2, D4 and D5), with the rules that chose their examples (section "Figures" below) |
 | `tuncat_peers/` (**GPL-2**) | FISSA, TUnCaT and CNMF on D2, D4 and D5 with the scripts of TUnCaT's paper-reproduction archive, staged with the paper's changes (CNMF at its published setting, one background component and AR(1), or at any setting of its cross-validation grid), and the record of those changes |
 | `tuncat_eval/` (**GPL-2**) | the F1 scorer of D2, D4 and D5: TUnCaT's transient detection and matching, the ground-truth transients of the NAOMi videos, the template filtering, the rule for CNMF results with removed components, and the same scoring ROI by ROI for the figures (`evaluation.view`) |
 | `../aqua2_settings/` | the AQuA2 settings that made the astrocyte territory of D1, D6 and D7 |
@@ -42,7 +42,7 @@ A port or a change of GPL-2 code keeps its license, so these folders are kept ap
 - From the saved per-case scores and traces, every number of the paper's tables is recomputed exactly: D1, the
   ablations, D2–D5 with the cross-validation, D6 and D7.
 - The ROI detection gives the ROIs of the paper's D1 run.
-- The figure code draws Figure 4 and Supplementary Figure S4 with the values of the paper's figures: every point,
+- The figure code draws Figure 4 and Supplementary Figure S6 with the values of the paper's figures: every point,
   line, image, outline, band and text the paper's panels draw, compared one by one, and the examples, windows
   and scores that their legends print.
 
@@ -173,7 +173,7 @@ Run from this folder:
 # is drawn from the equal-baseline table (cv_cai1_equal_baseline.json), and cv_cai1.json draws the first scoring
 python -m astrid_repro.figures cai1 --table <tables>/cv_cai1_equal_baseline.json --export <D3 export> \
     --ours <root> [...] --peers <folder> --cnmf-grid <grid> --suite2p <root> --out <figures>
-# Supplementary Figure S4, one row per dataset: D2 (ABO: A, B), D4 (NAOMi: C, D), D5 (1p: E, F)
+# Supplementary Figure S6, one row per dataset: D2 (ABO: A, B), D4 (NAOMi: C, D), D5 (1p: E, F)
 python -m astrid_repro.figures public --dataset ABO --table <tables>/cv_ABO.json --archive <TUnCaT archive> \
     --ours <root> [...] --peers <root> [...] --cnmf-grid <grid> --suite2p <root> \
     --evaluator tuncat_eval.evaluation:view --cnmf-fill tuncat_eval.evaluation:cnmf_fill --out <figures>
@@ -185,8 +185,8 @@ The tables are those `tables_public` writes; the other paths are those given to 
 |---|---|---|
 | Fig. 4A | D3: each method's correlation with the spike-predicted calcium per cell, GCaMP6f and GCaMP6s cells marked, the Holm-corrected marks | `cai1.draw_scores` |
 | Fig. 4B | D3: the example recording's mean image and ROI, and each method's standardized trace over the predicted calcium, with the spikes | `cai1.example`, `cai1.draw_image`, `cai1.draw_traces` |
-| Supp. Fig. S4A, C, E | D2, D4, D5: each method's F1 per video, the Holm-corrected marks | `public.draw_scores` |
-| Supp. Fig. S4B, D, F | D2, D4, D5: the example video's mean image and ROI masks, and the example ROI's trace as the evaluation sees it, with the labeled or simulated transients and each method's detections | `public.example`, `public.draw_image`, `public.draw_traces` |
+| Supp. Fig. S6A, C, E | D2, D4, D5: each method's F1 per video, the Holm-corrected marks | `public.draw_scores` |
+| Supp. Fig. S6B, D, F | D2, D4, D5: the example video's mean image and ROI masks, and the example ROI's trace as the evaluation sees it, with the labeled or simulated transients and each method's detections | `public.example`, `public.draw_image`, `public.draw_traces` |
 | Figs. 1-3, 5, 6; Supp. Figs. S1-S3 | D1, D6, D7 | *to come with the release of these datasets* |
 
 **Example rules** (Supplementary Section "Example panels"; each module's docstring gives the rule in full):
@@ -194,6 +194,6 @@ The tables are those `tables_public` writes; the other paths are those given to 
 - Fig. 4B: the cell on which ASTRID's correlation is furthest above the best other method's, its recording on
   which ASTRID is furthest ahead, and the 30 s within the electrophysiology where the methods' standardized
   traces differ most.
-- Supp. Fig. S4B, D, F: the video with ASTRID's median F1; among its ROIs with at least 8 labeled or simulated
+- Supp. Fig. S6B, D, F: the video with ASTRID's median F1; among its ROIs with at least 8 labeled or simulated
   transients and an ASTRID F1 of at least 0.5, the ROI on which ASTRID's F1 is furthest above the best other
   method's; the 120 s (or the whole recording) with the most transients on which the methods disagree.

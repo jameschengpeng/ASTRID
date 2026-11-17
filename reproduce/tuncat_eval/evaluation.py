@@ -12,7 +12,8 @@
   (``--cnmf-fill tuncat_eval.evaluation:cnmf_fill``). The missing neurons are found by walking the Jaccard
   distance between the masks and the thresholded footprints down the diagonal, and get all-zero traces.
 - ``view(dataset, video, archive)``: the same scoring ROI by ROI (``View``), what the example panels of
-  Supplementary Fig. S4 draw (``astrid_repro.figures public --evaluator tuncat_eval.evaluation:view``).
+  the supplementary figure of D2, D4 and D5 draw (``astrid_repro.figures public --evaluator
+  tuncat_eval.evaluation:view``).
 """
 
 from __future__ import annotations

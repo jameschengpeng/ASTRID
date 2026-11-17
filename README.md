@@ -234,9 +234,10 @@ See [`reproduce/README.md`](reproduce/README.md): the paper's evaluation on its 
 the code that draws the data panels of its figures.
 
 - **From public data alone:** D2–D5 (the Allen Brain Observatory, CRCNS cai-1, NAOMi and one-photon datasets),
-  from the public movies to every method's traces, the tables and the figures (Fig. 4 and Supplementary
-  Fig. S4). For D3, the export every method read is built from the CRCNS download, with the ROI of each cell
-  from `reproduce/cai1_rois`, drawn by hand once, blind to all methods (the dataset ships none).
+  from the public movies to every method's traces, the tables and the figures (Fig. 4 and the supplementary
+  figure of D2, D4 and D5). For D3, the export every method read is built from the CRCNS download, with the
+  ROI of each cell from `reproduce/cai1_rois`, drawn by hand once, blind to all methods (the dataset ships
+  none).
 - **With the authors' recordings:** D1, D6 and D7, whose availability is to be announced. Their settings, the
   statistics of their tables and the ROI detection are here; the builders of their injection and leakage tests
   and their figures will follow with the data.
@@ -245,7 +246,7 @@ the code that draws the data panels of its figures.
 
 MIT (see `LICENSE`), except two folders of the reproduction code, which derive from TUnCaT's GPL-2 code and so
 keep its license (GPL-2, each with its own `LICENSE`): `reproduce/tuncat_eval/`, the paper's F1 scorer of D2, D4
-and D5 (and its per-ROI view, drawn in Supplementary Fig. S4), a line-by-line port of TUnCaT's MATLAB
+and D5 (and its per-ROI view, drawn in their supplementary figure), a line-by-line port of TUnCaT's MATLAB
 evaluation; and `reproduce/tuncat_peers/`, which reruns the peer methods on D2, D4 and D5 with the scripts of
 TUnCaT's paper-reproduction archive, changed as the paper's runs changed them. The `astrid` package and the MIT
 reproduction code never import them. AQuA2, CASCADE, the peer methods

@@ -1,12 +1,12 @@
-"""Supplementary Figure S4: D2 (Allen Brain Observatory), D4 (NAOMi) and D5 (one-photon), the public datasets
+"""Supplementary Figure S6: D2 (Allen Brain Observatory), D4 (NAOMi) and D5 (one-photon), the public datasets
 scored by transient detection, one row each. Every panel is drawn from the outputs of ``reproduce/``: the
 table of the dataset (``cv_<dataset>.json``, written by ``tables_public public``), the traces every method gave
 (ASTRID's ``result.npz``, the peers', Suite2p's) and TUnCaT's figshare archive (the movies, masks and labels).
 
-- **Scores** (S4A, C, E; ``draw_scores``): each method's F1 per video, at the setting and threshold chosen for
+- **Scores** (panels A, C and E; ``draw_scores``): each method's F1 per video, at the setting and threshold chosen for
   that video by leave-one-video-out cross-validation, the mean as a bar, and above each method the mark of the
   Holm-corrected p of ASTRID against it over the videos, Holm over the five methods.
-- **Example** (S4B, D, F; ``example``, ``draw_image``, ``draw_traces``): the mean image of one video, every
+- **Example** (panels B, D and F; ``example``, ``draw_image``, ``draw_traces``): the mean image of one video, every
   ROI mask in white and the example ROI in yellow, and the example ROI with one row per method: its trace as
   the evaluation sees it (template-filtered, in noise SDs above its baseline), the method's threshold, the
   labeled (D2, D5) or simulated (D4) transients, and the transients the method detected (matched or false),
@@ -47,7 +47,7 @@ from astrid_repro.ring import video_ring
 
 ORDER = F.PUBLIC_ORDER
 NAMES = {"ABO": "ABO", "NAOMi": "NAOMi", "1p": "one-photon"}       # printed after the dataset's ID
-PANELS = {"ABO": ("figS4a", "figS4b"), "NAOMi": ("figS4c", "figS4d"), "1p": ("figS4e", "figS4f")}
+PANELS = {"ABO": ("figS6a", "figS6b"), "NAOMi": ("figS6c", "figS6d"), "1p": ("figS6e", "figS6f")}
 FPS = {"ABO": 30.0, "NAOMi": 30.0, "1p": 20.0}
 MIN_TRANSIENTS = 8
 MIN_ASTRID_F1 = 0.5                  # an ROI that ASTRID detects well, not only less badly than the others
@@ -88,7 +88,7 @@ def read_table(path: str | Path, dataset: str) -> dict[str, Any]:
 
 
 def draw_scores(ax: Any, dataset: str, table: dict[str, Any]) -> dict[str, Any]:
-    """Panel S4A, C or E: each method's F1 per video, with the mark of each comparison (module docstring)."""
+    """Panel A, C or E: each method's F1 per video, with the mark of each comparison (module docstring)."""
     marks = {m: F.stars(float(t["p_holm"])) for m, t in table["tests"].items()}
     shown = F.paired_dots(ax, table["values"], ORDER, marks, "F1 score (higher is better)",
                           f"{name_of(dataset)}, {len(table['videos'])} videos")
@@ -204,7 +204,7 @@ def mean_image(movie: str | Path, block: int = 500) -> np.ndarray:
 
 
 def draw_image(ax: Any, ex: dict[str, Any], image: np.ndarray) -> dict[str, Any]:
-    """The left part of panel S4B, D or F: the video's mean image (gray, from its 1st to its 99.5th
+    """The left part of panel B, D or F: the video's mean image (gray, from its 1st to its 99.5th
     percentile), every ROI mask in white and the example in yellow, and a scale bar below the image (20 um
     on a field narrower than 120 um, else 50 um)."""
     masks = np.asarray(ex["masks"], dtype=bool)
@@ -229,7 +229,7 @@ def draw_image(ax: Any, ex: dict[str, Any], image: np.ndarray) -> dict[str, Any]
 
 
 def draw_traces(fig: Any, ex: dict[str, Any]) -> dict[str, Any]:
-    """The right part of panel S4B, D or F: the example ROI, one row per method (module docstring)."""
+    """The right part of panel B, D or F: the example ROI, one row per method (module docstring)."""
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
 
@@ -289,7 +289,7 @@ def draw_traces(fig: Any, ex: dict[str, Any]) -> dict[str, Any]:
 def panels(dataset: str, table_path: str | Path, *, archive: str | Path, ours: Sequence[str | Path],
            peers: Sequence[str | Path] | None, suite2p: str | Path, evaluator: Evaluator,
            cnmf_fill: D.CnmfFill | None = None, cnmf_grid: str | Path | None = None) -> list[F.Panel]:
-    """The dataset's row of Supplementary Fig. S4: (file stem, figure, record) for its scores, its example's
+    """The dataset's row of the figure: (file stem, figure, record) for its scores, its example's
     image and its example's traces."""
     import matplotlib.pyplot as plt
 
