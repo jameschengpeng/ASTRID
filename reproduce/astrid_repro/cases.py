@@ -17,11 +17,11 @@ D1 and D7 have no ground truth, so known signals are added to the real movie of 
 **The rules** (``Rules``: D1's numbers by default; ``D7_RULES``). Lengths are in pixels of the movies' grid,
 about 2 um; ROI v is row v-1 of a recording's ΔF/F0; with several recordings, a ROI's SNR and percentile are
 means over them.
-- ``leakage_targets``: the ROIs that lie wholly inside the registration border, of at least ``target_min_px``
-  pixels (D1 10, D7 no minimum), with territory within ``NEAR_PX`` of them (outside the ROI), the most territory
-  pixels first, ties to the higher ``snr_proxy`` and then the higher label; the first ``LEAK_TARGETS``.
-- ``injection_sources``: the ROIs that lie wholly inside the registration border, of at least ``source_min_px``
-  pixels (D1 20, D7 no minimum), with no AQuA2 event within ``SOURCE_CLEAR_PX`` and a usable footprint
+- ``leakage_targets``: the ROIs of at least ``target_min_px`` pixels (D1 10, D7 no minimum) that do not reach into
+  the registration margin (``border_px``), with territory within ``NEAR_PX`` of them (outside the ROI), the most
+  territory pixels first, ties to the higher ``snr_proxy`` and then the higher label; the first ``LEAK_TARGETS``.
+- ``injection_sources``: the ROIs of at least ``source_min_px`` pixels (D1 20, D7 no minimum) that do not reach
+  into the registration margin, with no AQuA2 event within ``SOURCE_CLEAR_PX`` and a usable footprint
   (``usable_source``), the highest 99th percentile of ΔF/F0 first; the first ``SOURCES``.
 - ``free_sites``: up to ``SITES`` sites of each kind, in territory (a site pixel touched by at least
   ``site_min_events`` events: D1 4, D7 1) or away from it (no event within ``CONTROL_CLEAR_PX``); on D1 also an

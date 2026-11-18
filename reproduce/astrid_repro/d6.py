@@ -35,8 +35,9 @@ it records, in green-detector units, and the one-color movie M = ch1 + R. Each f
 stored in float32, R first and M from ch1 and the stored R; R may dip below zero, and nothing is clipped. Every
 frame is checked: |M - R - ch1| at most ``CHECK_TOL`` of the frame's largest |M| or |R|.
 
-**The cases** (``cases_of``): the location's ROIs that the detection found in the recording and that lie wholly
-inside the registration border, in ascending order (an ROI silent in a recording has no neuronal signal to keep).
+**The cases** (``cases_of``): the location's ROIs that the detection found in the recording and that do not reach
+into the registration margin (``border_px``), in ascending order (an ROI silent in a recording has no neuronal
+signal to keep).
 A case's territory class (``territory_class``): "in" when at least half of its ROI's pixels are territory, "out"
 when none is, else "between".
 
