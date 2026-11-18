@@ -174,8 +174,9 @@ res = astrid.demix(movie, rois, fps=cfg["fps"], um_per_px=cfg["um_per_px"], terr
 `astrid_repro/figures` draws the data panels of the paper's figures from the outputs above, each with the values,
 examples, windows, marks and colors of the paper's figure, and saves each panel on its own
 (`<panel>_<dataset>_<part>.png` and `.svg`) with a record of what it shows (`.json`: the values drawn, the
-example and the numbers its legend prints). The schematics (Fig. 1A and 1D, 2A, 3A, 5A) and the paper's
-typography, panel sizes and page layout are not part of it: the panels are drawn with matplotlib's defaults.
+example and the numbers its legend prints). The schematics (Fig. 1A and 1D, 2A, 3A, Supp. Fig. S2A) and the
+paper's typography, panel sizes and page layout are not part of it: the panels are drawn with matplotlib's
+defaults.
 Run from this folder:
 
 ```bash
@@ -197,7 +198,7 @@ The tables are those `tables_public` writes; the other paths are those given to 
 | Fig. 4B | D3: the example recording's mean image and ROI, and each method's standardized trace over the predicted calcium, with the spikes | `cai1.example`, `cai1.draw_image`, `cai1.draw_traces` |
 | Supp. Fig. S6A, C, E | D2, D4, D5: each method's F1 per video, the Holm-corrected marks | `public.draw_scores` |
 | Supp. Fig. S6B, D, F | D2, D4, D5: the example video's mean image and ROI masks, and the example ROI's trace as the evaluation sees it, with the labeled or simulated transients and each method's detections | `public.example`, `public.draw_image`, `public.draw_traces` |
-| Figs. 1-3, 5, 6; Supp. Figs. S1-S3 | D1, D6, D7 | *to come with the release of these datasets* |
+| Figs. 1-3; Supp. Figs. S1-S5 | D1, D6, D7, and the simulations of Supp. Fig. S5 | *not part of this code yet* |
 
 **Example rules** (Supplementary Section "Example panels"; each module's docstring gives the rule in full):
 

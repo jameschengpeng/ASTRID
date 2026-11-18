@@ -145,7 +145,7 @@ traces are not validated as astrocyte readouts.
 ## Settings
 
 `astrid.Settings` holds the model's settings in the paper's names; the defaults are those of the paper's
-Supplementary Table of default settings.
+Supplementary Table S1.
 
 | Setting | Default | Meaning | Name in the analysis code |
 |---|---|---|---|

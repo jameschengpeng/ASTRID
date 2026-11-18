@@ -27,8 +27,9 @@ grid and in their orientation.
 
 **Settings** from ``reproduce/datasets.yaml`` (D1): the time constants, the defaults otherwise, at most 2,000
 iterations in the leakage test (``leakage_test_settings``); the location's frame rate, pixel size and border
-must be D1's there. ``--variant`` runs one of the paper's ablations: A without astrocyte components
-(``astro_components=False``), B with kappa_a 0, C with kappa_rho 0.
+must be D1's there. ``--variant`` runs one of the paper's ablations: I without astrocyte components
+(``astro_components=False``), II with kappa_a 0 (no penalty on fast astrocyte fluctuations), III with kappa_rho 0
+(no evidence map).
 
 **Outputs** of one recording, in ``<out>/<location>_<recording>/``:
 - ``run.json``: the location, the recording, the settings and the choices (the sources, the sites, the leakage
@@ -46,7 +47,7 @@ Run from ``reproduce/`` with one BLAS thread (``OMP_NUM_THREADS=1 OPENBLAS_NUM_T
 exported, as in the paper's runs: the last digits of the fits and the scores depend on the BLAS's summation
 order):
     python -m astrid_repro.d1 run --data <inputs> --location <location> --recording <recording> --out <root>
-        [--tests injection leakage] [--workers 16] [--variant A|B|C [--cases <the full model's run>/compare]]
+        [--tests injection leakage] [--workers 16] [--variant I|II|III [--cases <the full model's run>/compare]]
     python -m astrid_repro.d1 score --run <root>/<location>_<recording> [--results <dir> ...]
     python -m astrid_repro.d1 pool --root <root> --out <scores>
 ``score`` scores again once the peer methods have run (``--results``: their results folders, e.g.
@@ -80,7 +81,7 @@ from astrid_repro import cases as C
 CONFIG = Path(__file__).resolve().parents[1] / "datasets.yaml"
 LOCATION_FILE = "location.npz"
 VARIANTS: dict[str, tuple[dict[str, float], bool]] = {   # (settings changed, astrocyte components)
-    "A": ({}, False), "B": ({"kappa_a": 0.0}, True), "C": ({"kappa_rho": 0.0}, True)}
+    "I": ({}, False), "II": ({"kappa_a": 0.0}, True), "III": ({"kappa_rho": 0.0}, True)}
 BLAS_THREADS = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")
 
 

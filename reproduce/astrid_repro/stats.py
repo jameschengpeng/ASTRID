@@ -18,7 +18,7 @@ Commands (from ``reproduce/``: ``python -m astrid_repro.stats <command> --help``
   the six comparisons before Suite2p, every p Holm-corrected over the seven with Suite2p, ``p_holm``, and
   over the six, ``p_holm_declared``), ``d1_suite2p.json`` (ASTRID against Suite2p on the primary and
   secondary measures), ``d1_secondary.json`` (the secondary measures' families of seven) and ``d1_stats.md``.
-- ``ablations``: D1's ablations (``ablations``), full ASTRID against variants A, B and C, each from its own
+- ``ablations``: D1's ablations (``ablations``), full ASTRID against variants I, II and III, each from its own
   pooled scores (ASTRID's rows only; every variant must have exactly the full model's cases). Output:
   ``ablation_stats.json`` and ``.md``.
 - ``d6-scores``: D6's per-case scores of one recording from the traces (``d6_scores``) and the kept transient
@@ -313,9 +313,9 @@ def d1_markdown(res: dict[str, Any]) -> str:
 
 # ------------------------------------------------------------------------------------------------ ablations
 
-VARIANTS = ("A", "B", "C")
-ABLATION_NAMES = {"full": "Full (ASTRID)", "A": "A, no astrocyte components", "B": "B, no astrocyte temporal model",
-                  "C": "C, no structural evidence"}
+VARIANTS = ("I", "II", "III")
+ABLATION_NAMES = {"full": "Full (ASTRID)", "I": "I, no astrocyte components",
+                  "II": "II, no penalty on fast fluctuations", "III": "III, no evidence map"}
 MEASURE = {"gain_dev": "|gain - 1|"}
 ABLATION_KEYS = {"injection": ["location", "recording", "case", "scale"],
                  "leakage": ["location", "recording", "target", "scale"]}
@@ -898,7 +898,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", type=Path, required=True)
     p = sub.add_parser("ablations", help="D1's ablations")
     p.add_argument("--full", type=Path, required=True, help="the full model's pooled per-case scores")
-    p.add_argument("--variant", nargs="+", required=True, help="A=<folder> B=<folder> C=<folder>")
+    p.add_argument("--variant", nargs="+", required=True, help="I=<folder> II=<folder> III=<folder>")
     p.add_argument("--suffix", default="")
     p.add_argument("--out", type=Path, required=True)
     p = sub.add_parser("d6-scores", help="D6's per-case scores and kept transient sizes of one recording")

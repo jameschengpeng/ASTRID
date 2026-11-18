@@ -51,8 +51,8 @@ def test_inputs_and_settings(tmp_path: Path) -> None:
     assert astro and (s["injection"].max_iterations, s["leakage"].max_iterations) == (600, 2000)
     assert (s["injection"].tau_r, s["injection"].tau_d) == (0.05, 0.4)
     assert s["leakage"].kappa_a == s["injection"].kappa_a == 10.0
-    assert D.d1_settings(loc, "A")[1] is False and D.d1_settings(loc, "A")[0]["injection"] == s["injection"]
-    b, c = D.d1_settings(loc, "B")[0], D.d1_settings(loc, "C")[0]
+    assert D.d1_settings(loc, "I")[1] is False and D.d1_settings(loc, "I")[0]["injection"] == s["injection"]
+    b, c = D.d1_settings(loc, "II")[0], D.d1_settings(loc, "III")[0]
     assert (b["injection"].kappa_a, b["leakage"].kappa_a, b["leakage"].max_iterations) == (0.0, 0.0, 2000)
     assert (c["injection"].kappa_rho, c["leakage"].kappa_rho, c["injection"].kappa_a) == (0.0, 0.0, 10.0)
     other = write_inputs(tmp_path / "other", fps=30.0)
@@ -109,7 +109,7 @@ def test_one_recording(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert {"location", "recording", "target", "scale", "method", "leak", "kept_corr"} <= set(pooled.columns)
     # an ablation scored against the full model's export
     again = D.run_recording(tmp_path / "data", "toy_loc01", REC, tmp_path / "out_A", tests=["leakage"],
-                            variant="A", cases_dir=run / "compare", config=cfg, log=lambda s: None)
+                            variant="I", cases_dir=run / "compare", config=cfg, log=lambda s: None)
     assert not (again / "compare").exists()
     with np.load(again / "leakage" / "M-003-astro-x1.npz") as z:
         assert "astro" not in list(z["kinds"]) and "A-inj" not in list(z["names"])

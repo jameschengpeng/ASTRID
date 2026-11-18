@@ -586,7 +586,7 @@ def demix(movies: Any, rois: np.ndarray, *, fps: float, um_per_px: float, tau_r:
     ``settings``: ``Settings()`` (the paper's defaults) unless given; ``tau_r``/``tau_d`` set its time
     constants. ``workers`` > 0 fits the ROIs in that many processes (with one BLAS thread each, e.g.
     OMP_NUM_THREADS=1, for speed). ``astro_components=False`` keeps the territory out of the patches (the
-    paper's ablation A); ``export_components`` adds the components' contributions and traces."""
+    paper's ablation I); ``export_components`` adds the components' contributions and traces."""
     t_call = time.perf_counter()
     mlist = movies if isinstance(movies, (list, tuple)) else [movies]
     rnames = list(recording_names) if recording_names else [f"rec{i}" for i in range(len(mlist))]

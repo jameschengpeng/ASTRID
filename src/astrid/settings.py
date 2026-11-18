@@ -1,4 +1,4 @@
-"""ASTRID's settings, in the paper's names, with the defaults of Supplementary Table S (tab:defaults).
+"""ASTRID's settings, in the paper's names, with the defaults of Supplementary Table S1.
 
 =====================  =======  =========================================================================
 Setting                Default  Meaning (paper section)

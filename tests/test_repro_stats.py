@@ -116,22 +116,22 @@ def test_ablations_exact_test_holm_over_three_and_the_same_cases() -> None:
     worse = {k: v.assign(err_05hz=v.get("err_05hz", 0) + 0.1, leak=v.get("leak", 0) + 0.1) for k, v in ours.items()}
     low = ours["injection"].copy()
     low.loc[low.index[:5], "gain"] = 0.1                                   # five x1 or x3 gains below 0.5
-    variants = {"A": worse, "B": ours, "C": {**ours, "injection": low}}
+    variants = {"I": worse, "II": ours, "III": {**ours, "injection": low}}
     rec = stats.ablations(full, variants)
     s = rec["error x1"]["stats"]
-    assert s["B"]["p"] == 1.0 and s["B"]["n_nonzero"] == 0 and s["B"]["wins"] == 0     # identical: no test
-    d = np.asarray(rec["error x1"]["scores"]["full"]) - np.asarray(rec["error x1"]["scores"]["A"])
-    assert s["A"]["p"] == wilcoxon(d, method="exact").pvalue and s["A"]["wins"] == s["A"]["n"] == 8
-    assert {v: s[v]["p_holm"] for v in "ABC"} == metrics.holm({v: s[v]["p"] for v in "ABC"})
+    assert s["II"]["p"] == 1.0 and s["II"]["n_nonzero"] == 0 and s["II"]["wins"] == 0  # identical: no test
+    d = np.asarray(rec["error x1"]["scores"]["full"]) - np.asarray(rec["error x1"]["scores"]["I"])
+    assert s["I"]["p"] == wilcoxon(d, method="exact").pvalue and s["I"]["wins"] == s["I"]["n"] == 8
+    assert {v: s[v]["p_holm"] for v in stats.VARIANTS} == metrics.holm({v: s[v]["p"] for v in stats.VARIANTS})
     assert rec["kept correlation x1"]["better"] == "higher"
     n3 = int((low.scale == 3).sum())
     assert rec["_descriptive"]["n_cases"] == n3
-    assert rec["_descriptive"]["counts"]["C"] == int((low[low.scale == 3].gain < 0.5).sum())
-    assert "A, no astrocyte components" in stats.ablation_markdown(rec)
+    assert rec["_descriptive"]["counts"]["III"] == int((low[low.scale == 3].gain < 0.5).sum())
+    assert "I, no astrocyte components" in stats.ablation_markdown(rec)
     with pytest.raises(SystemExit, match="cases differ"):
-        stats.ablations(full, {**variants, "C": {**ours, "injection": low.iloc[1:]}})
+        stats.ablations(full, {**variants, "III": {**ours, "injection": low.iloc[1:]}})
     with pytest.raises(ValueError):
-        stats.ablations(full, {"A": worse, "B": ours})
+        stats.ablations(full, {"I": worse, "II": ours})
 
 
 def d6_recording(root: Path, name: str, location: str, T: int = 240) -> Path:
@@ -294,11 +294,11 @@ def test_commands(tmp_path: Path) -> None:
         assert (out / f).exists()
     assert json.loads((out / "d1_stats.json").read_text())["error x1"]["holm"]["family"][-1] == "suite2p"
     with pytest.raises(SystemExit):
-        stats.main(["ablations", "--full", str(scores), "--variant", f"A={scores}", f"B={scores}",
+        stats.main(["ablations", "--full", str(scores), "--variant", f"I={scores}", f"II={scores}",
                     "--out", str(out)])
-    assert stats.main(["ablations", "--full", str(scores), "--suffix", "8loc", "--variant", f"A={scores}",
-                       f"B={scores}", f"C={scores}", "--out", str(out)]) == 0
-    assert json.loads((out / "ablation_stats.json").read_text())["leakage x3"]["stats"]["A"]["p"] == 1.0
+    assert stats.main(["ablations", "--full", str(scores), "--suffix", "8loc", "--variant", f"I={scores}",
+                       f"II={scores}", f"III={scores}", "--out", str(out)]) == 0
+    assert json.loads((out / "ablation_stats.json").read_text())["leakage x3"]["stats"]["I"]["p"] == 1.0
     run = d6_recording(tmp_path / "d6", "rec1", "A_loc01")
     assert stats.main(["d6-scores", "--run", str(run)]) == 0 and (run / "scores.csv").exists()
     for k in range(3):

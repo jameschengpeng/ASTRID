@@ -1,5 +1,5 @@
 # ASTRID's inputs and settings on the paper's seven datasets, as they were run. Settings use the paper's names
-# (astrid.Settings); anything not listed is the default (Supplementary Table of default settings).
+# (astrid.Settings); anything not listed is the default (Supplementary Table S1).
 #
 # Baseline: by default, F0 of each pixel is the 10th percentile of its 1-s means in a moving 60-s window (D7's own
 # rule is in its settings below).

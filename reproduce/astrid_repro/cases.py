@@ -52,7 +52,7 @@ u. It is added to the data Y only. The baseline F0 and the pixel weights come fr
 addition (``astrid.api.load_pixels``), and the noise covariance Sigma from the data after it. An added
 astrocyte is one more astrocyte component, ``A-inj``, placed before the local neuropil, on its mask dilated by
 ``ASTRO_SUPPORT_PX`` within the patch, and the evidence is raised to at least ``EVIDENCE_FLOOR`` over its mask.
-``astro_components=False`` (the paper's ablation A) leaves out every astrocyte component, ``A-inj`` included;
+``astro_components=False`` (the paper's ablation I) leaves out every astrocyte component, ``A-inj`` included;
 the added signals and the evidence stay as they are. Without an evidence map (D7) the raised evidence has no
 effect.
 

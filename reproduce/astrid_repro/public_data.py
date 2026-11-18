@@ -45,7 +45,7 @@ ONE_PHOTON_VIDEOS = ("c25_59_228", "c27_12_326", "c28_83_210", "c25_163_267", "c
                      "c25_123_348", "c27_122_121", "c28_163_244")     # TUnCaT's order
 VIDEOS = {"ABO": ABO_VIDEOS, "NAOMi": NAOMI_VIDEOS, "1p": ONE_PHOTON_VIDEOS}
 PAPER_NAMES = {"ABO": "D2", "cai1": "D3", "NAOMi": "D4", "1p": "D5"}
-UM_PER_PX = {"ABO": 0.785, "NAOMi": 1.0, "1p": 3.5}                  # the paper's Table 1
+UM_PER_PX = {"ABO": 0.785, "NAOMi": 1.0, "1p": 3.5}                  # the paper's Supplementary Table S2
 
 CAI1_FOLDERS = {"GCaMP6f": "GCaMP6f_11cells_Chen2013", "GCaMP6s": "GCaMP6s_9cells_Chen2013"}
 # published single-spike responses (Chen et al. 2013): time to peak and half-decay, in seconds

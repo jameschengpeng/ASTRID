@@ -365,7 +365,7 @@ def cai1_record(index: list[dict[str, Any]], scores: dict[str, dict[str, dict[st
 
 # ---- reports ----
 
-# the settings chosen, as the paper's table of them gives them (tab:cv-settings)
+# the settings chosen, as the paper's table of them gives them (Supplementary Table S3)
 CV_LABELS = (("ours", "ASTRID (kappa_d, kappa_np)"), ("TUnCaT", "TUnCaT (alpha)"), ("FISSA", "FISSA (alpha)"),
              ("CNMF", "CNMF (n_b, p)"))
 SETTING_FORMS = {"ours": r"ks([0-9.]+)_kb([0-9.]+)", "CNMF": r"gnb([0-9]+)_p([0-9]+)"}
