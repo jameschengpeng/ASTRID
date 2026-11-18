@@ -266,6 +266,44 @@ def test_public_grids_end_to_end(tmp_path: Path) -> None:
     assert out["suite2p"] is None and "Ring" in out["table"]["_meta"]["stats"]
 
 
+def test_settings_option_keeps_only_astrid_settings(tmp_path: Path) -> None:
+    assert len(T.SHARED_SETTINGS) == len(set(T.SHARED_SETTINGS)) == 14
+    traces = {"ks4_kb0.1": 1, "ks2_kb0.1": 2, "ks8_kb0.03": 3}
+    assert list(T.keep_settings(traces, ["ks8_kb0.03", "ks4_kb0.1"], "x")) == ["ks4_kb0.1", "ks8_kb0.03"]  # own order
+    assert T.keep_settings(traces, None, "x") is traces
+    with pytest.raises(ValueError, match="ks1_kb0.3"):
+        T.keep_settings(traces, ["ks1_kb0.3"], "x")
+    rng = np.random.default_rng(7)
+    arch = tmp_path / "archive"
+    for v in ("v1", "v2"):
+        (arch / "data/ABO/GT Masks").mkdir(parents=True, exist_ok=True)
+        scipy.io.savemat(D.masks_path(arch, "ABO", v), {"FinalMasks": _masks().transpose(2, 1, 0).astype(np.uint8)})
+        with h5py.File(D.movie_path(arch, "ABO", v), "w") as f:
+            f["mov"] = rng.normal(100, 5, (30, 40, 30)).astype(np.float32)
+        _peers(D.released_root(arch, "ABO"), v, 3, 30, rng.random())
+        for s in ("ks2_kb0.1", "ks4_kb0.1"):
+            (tmp_path / "ours/ABO" / s / v).mkdir(parents=True)
+            np.savez(tmp_path / "ours/ABO" / s / v / "result.npz", **{f"dff__{v}": rng.random((3, 30))})
+    full, _ = T.public_grids("ABO", arch, lambda ds, v, a: _toy_scorer, ours=[tmp_path / "ours"], videos=["v1", "v2"],
+                             ring=False, log=lambda s: None)
+    kept, _ = T.public_grids("ABO", arch, lambda ds, v, a: _toy_scorer, ours=[tmp_path / "ours"], videos=["v1", "v2"],
+                             ring=False, log=lambda s: None, settings=["ks4_kb0.1"])
+    assert full["ours"][0].settings == ["ks2_kb0.1", "ks4_kb0.1"] and kept["ours"][0].settings == ["ks4_kb0.1"]
+    assert np.array_equal(kept["ours"][0].f1[0], full["ours"][0].f1[1])
+    assert all(np.array_equal(kept[m][0].f1, full[m][0].f1) for m in full if m != "ours")    # the others unchanged
+    index = [{"name": f"c{c}_1", "cell": f"c{c}", "rec": "1"} for c in range(3)]
+    (tmp_path / "d3").mkdir()
+    for row in index:
+        _export(tmp_path / "d3", row["name"], rng)
+        for s in ("ks1_kb0.03", "ks2_kb0.1"):
+            d = tmp_path / "d3ours/cai1" / s / row["name"]
+            d.mkdir(parents=True)
+            np.savez(d / "result.npz", **{f"dff__{row['name']}": rng.random((1, 60))})
+    (tmp_path / "d3/index.json").write_text(json.dumps(index), encoding="utf-8")
+    _, scores = T.cai1_scores(tmp_path / "d3", [tmp_path / "d3ours"], settings=["ks2_kb0.1"])
+    assert list(scores["ours"]) == ["ks2_kb0.1"]
+
+
 def test_cai1_record(tmp_path: Path) -> None:
     rng = np.random.default_rng(6)
     index = [{"name": f"c{c}_{r}", "cell": f"c{c}", "rec": str(r)} for c in range(6) for r in (1, 2)]

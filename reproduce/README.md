@@ -77,6 +77,9 @@ were left out of the input of every method.
      (D7's own rule is in `datasets.yaml`).
    - The fits were allowed at most 600 iterations, the default, except in the leakage tests of D1 and D7, where
      they were allowed at most 2,000.
+   - `tables_public grids --settings ...` and `tables_public cai1 --settings ...` keep only the given settings of
+     ASTRID's, e.g. the 14 pairs every public dataset's grid shares (`tables_public.SHARED_SETTINGS`;
+     Supplementary Section 4.4), the other methods unchanged; write them into a separate folder.
    - On D2–D5, every (kappa_d, kappa_np) pair of the dataset's grid is run on every video (`run.py`, into the
      layout `tables_public` reads). Leave-one-video-out cross-validation (leave-one-cell-out on D3) then picks
      the setting that is applied to each held-out video (`cv.py`).

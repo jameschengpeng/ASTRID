@@ -15,6 +15,11 @@ CNMF's settings are chosen by the same cross-validation as the other methods' (`
 is then the cross-validated one, and ``CNMF_fixed``, read from ``--peers`` (the published setting, gnb 1 and
 p 1), is a reference row, not tested. Without ``--cnmf-grid`` the row ``CNMF`` is the fixed setting, as before.
 
+``grids --settings`` and ``cai1 --settings`` keep only the given settings of ASTRID's (``keep_settings``), in
+their own order, the other methods untouched: e.g. the 14 (kappa_d, kappa_np) pairs that every public dataset's
+grid shares (``SHARED_SETTINGS``), each dataset's grid having more at its own edge. Write them into another
+folder than the full grids.
+
 D3 has two scorings (``cai1 --baseline``), and the paper reports both. ``reported`` (the default): ASTRID's ΔF/F0,
 its running baseline removed by the fit, and every other trace with only its mean removed by the correlation.
 ``equal``: every trace but ASTRID's has its own running baseline removed by ASTRID's rule
@@ -189,12 +194,27 @@ def cv_by_method(grids: dict[str, list[C.Grid]], videos: Sequence[str]) -> dict[
     return {m: C.loo_cv(videos, g) for m, g in grids.items() if len(g) == len(videos) and len(videos) > 1}
 
 
+SHARED_SETTINGS = ("ks16_kb0.01", "ks16_kb0.03", "ks1_kb0.03", "ks1_kb0.1", "ks1_kb0.3", "ks2_kb0.03", "ks2_kb0.1",
+                   "ks2_kb0.3", "ks4_kb0.01", "ks4_kb0.03", "ks4_kb0.1", "ks4_kb0.3", "ks8_kb0.01", "ks8_kb0.03")
+
+
+def keep_settings(traces: dict[str, Any], settings: Sequence[str] | None, where: str) -> dict[str, Any]:
+    """ASTRID's traces of the given settings only, in the traces' own order (which breaks ties in the
+    cross-validation); all of them without ``settings``. A setting the traces lack is refused."""
+    if not settings or not traces:
+        return traces
+    missing = sorted(set(settings) - set(traces))
+    if missing:
+        raise ValueError(f"{where}: no traces of ASTRID's settings {missing}")
+    return {k: v for k, v in traces.items() if k in set(settings)}
+
+
 def _grid_task(args: tuple[Any, ...]) -> tuple[str, str, C.Grid | None]:
-    method, dataset, video, archive, ours, peers, suite2p, factory, cnmf_fill, ring_trace, cnmf_grid = args
+    method, dataset, video, archive, ours, peers, suite2p, factory, cnmf_fill, ring_trace, cnmf_grid, settings = args
     masks = D.read_masks(D.masks_path(archive, dataset, video))
     released = D.released_root(archive, dataset)
     if method == "ours":
-        traces = D.ours_traces(ours, dataset, video)
+        traces = keep_settings(D.ours_traces(ours, dataset, video), settings, f"{dataset} {video}")
     elif method == "CNMF" and cnmf_grid:
         traces = D.cnmf_grid_traces(cnmf_grid, dataset, video, masks=masks, cnmf_fill=cnmf_fill)
     elif method == CNMF_FIXED:
@@ -219,13 +239,14 @@ def public_grids(dataset: str, archive: str | Path, scorer: ScorerFactory, *,
                  ours: Sequence[str | Path] | None = None, peers: Sequence[str | Path] | None = None,
                  suite2p: str | Path | None = None, videos: Sequence[str] | None = None,
                  cnmf_fill: D.CnmfFill | None = None, ring: bool = True, workers: int = 1,
-                 log: Callable[[str], None] = print, cnmf_grid: str | Path | None = None
-                 ) -> tuple[dict[str, list[C.Grid]], dict[str, Any]]:
+                 log: Callable[[str], None] = print, cnmf_grid: str | Path | None = None,
+                 settings: Sequence[str] | None = None) -> tuple[dict[str, list[C.Grid]], dict[str, Any]]:
     """Every method's grid on every video of a dataset: ASTRID's settings (``ours`` roots), the peers (their
     reruns, ``peers``; else the archive's released traces), CNMF over its grid (``cnmf_grid``, with
     ``CNMF_fixed`` from the peers), the reference rows (released), the ring (computed here from the archive's
     movie) and Suite2p (``suite2p`` root). ``scorer(dataset, video, archive)`` gives the video's scorer. A method
-    missing on a video is left out. Returns (method -> grids in video order, the ring traces per video)."""
+    missing on a video is left out. ``settings``: ASTRID's settings to keep (``keep_settings``), else all.
+    Returns (method -> grids in video order, the ring traces per video)."""
     videos = list(videos or D.VIDEOS[dataset])
     rings: dict[str, Any] = {}
     if ring:
@@ -237,7 +258,8 @@ def public_grids(dataset: str, archive: str | Path, scorer: ScorerFactory, *,
             and (m != CNMF_FIXED or cnmf_grid)]
     tasks = [(m, dataset, v, str(archive), [str(r) for r in ours or []], [str(r) for r in peers or []],
               None if suite2p is None else str(suite2p), scorer, cnmf_fill,
-              rings[v]["trace"] if m == "ring" else None, None if cnmf_grid is None else str(cnmf_grid))
+              rings[v]["trace"] if m == "ring" else None, None if cnmf_grid is None else str(cnmf_grid),
+              None if settings is None else list(settings))
              for m in todo for v in videos]
     got: dict[tuple[str, str], C.Grid | None] = {}
     if workers > 1:
@@ -273,12 +295,14 @@ def _cai1_r(trace: np.ndarray, pred: np.ndarray, ok: np.ndarray, fps: float | No
 
 
 def cai1_scores(export: str | Path, ours: Sequence[str | Path] | None = None, peers: str | Path | None = None,
-                cnmf_grid: str | Path | None = None, baseline: str = "reported"
+                cnmf_grid: str | Path | None = None, baseline: str = "reported",
+                settings: Sequence[str] | None = None
                 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, dict[str, float]]]]:
     """Every method's r per recording on D3: (the export's index, method -> setting -> {recording: r}), the
     reference rows first ("raw", "ring", "authors_ring"), then ASTRID and the peers; with ``cnmf_grid``, CNMF
     over its grid and ``CNMF_fixed`` from ``peers``. ``baseline`` (module docstring): "reported", or "equal",
-    every trace but ASTRID's scored after its own running baseline is removed by ASTRID's rule."""
+    every trace but ASTRID's scored after its own running baseline is removed by ASTRID's rule. ``settings``:
+    ASTRID's settings to keep (``keep_settings``), else all."""
     _check_baseline(baseline)
     index = D.read_cai1_index(export)
     scores: dict[str, dict[str, dict[str, float]]] = {}
@@ -293,6 +317,8 @@ def cai1_scores(export: str | Path, ours: Sequence[str | Path] | None = None, pe
                 traces = D.cai1_cnmf_grid(cnmf_grid, name)
             else:
                 traces = D.cai1_traces("CNMF" if method == CNMF_FIXED else method, name, peers, ours)
+                if method == "ours":
+                    traces = keep_settings(traces, settings, f"D3 {name}")
             for setting, tr in traces.items():
                 r = _cai1_r(tr, pred, ok, None if method == "ours" else fps)    # ASTRID's: ΔF/F0 as it is
                 scores.setdefault(method, {}).setdefault(setting, {})[name] = r
@@ -486,6 +512,7 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--cnmf-fill", help="module:function, (mat, masks) -> (n, T)")
     g.add_argument("--cnmf-grid", type=Path, help="CNMF's six settings (<grid>/gnb<g>_p<p>/<dataset>/...)")
     g.add_argument("--videos", nargs="*")
+    g.add_argument("--settings", nargs="+", help="only these settings of ASTRID's (e.g. SHARED_SETTINGS)")
     g.add_argument("--workers", type=int, default=1)
     g.add_argument("--out", type=Path, required=True)
     p = sub.add_parser("public", help="a D2, D4 or D5 table from the grids")
@@ -499,6 +526,7 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--peers", type=Path)
     c.add_argument("--cnmf-grid", type=Path, help="CNMF's six settings (<grid>/gnb<g>_p<p>/cai1/<name>.npz)")
     c.add_argument("--suite2p", type=Path)
+    c.add_argument("--settings", nargs="+", help="only these settings of ASTRID's (e.g. SHARED_SETTINGS)")
     c.add_argument("--baseline", choices=BASELINES, default="reported",
                    help="equal: every trace but ASTRID's minus its own running baseline under ASTRID's rule before "
                         "the correlation (written as cv_cai1_equal_baseline)")
@@ -507,7 +535,7 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "grids":
         grids, _ = public_grids(a.dataset, a.archive, _callable(a.scorer), ours=a.ours, peers=a.peers,
                                 suite2p=a.suite2p, videos=a.videos, cnmf_fill=_callable(a.cnmf_fill),
-                                workers=a.workers, cnmf_grid=a.cnmf_grid)
+                                workers=a.workers, cnmf_grid=a.cnmf_grid, settings=a.settings)
         a.out.mkdir(parents=True, exist_ok=True)
         for m, gs in grids.items():
             for v, grid in zip(a.videos or D.VIDEOS[a.dataset], gs, strict=True):
@@ -520,7 +548,7 @@ def main(argv: list[str] | None = None) -> int:
         record, s2p, family = public_record(a.dataset, cv_by_method(grids, videos))
         _write(a.out, f"cv_{a.dataset}", record, s2p, family, public_markdown(a.dataset, record, s2p))
         return 0
-    index, scores = cai1_scores(a.export, a.ours, a.peers, a.cnmf_grid, a.baseline)
+    index, scores = cai1_scores(a.export, a.ours, a.peers, a.cnmf_grid, a.baseline, a.settings)
     s2p_r = cai1_suite2p_scores(a.export, a.suite2p, index, a.baseline) if a.suite2p else None
     record, s2p, family = cai1_record(index, scores, s2p_r)
     if a.baseline == "equal":
