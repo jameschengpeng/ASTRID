@@ -216,7 +216,11 @@ were left out of the input of every method.
    recordings on D7, the videos on D2, D4 and D5, the cells on D3. ASTRID is compared with each other method by a
    paired two-sided Wilcoxon signed-rank test, with Holm's correction over the comparisons of each measure
    (`stats.py`, `tables_public.py`). The test is `metrics.wilcoxon_p`, zero differences dropped, with SciPy's
-   default method in every table.
+   default method in every table. The units of D1, D6 and D7 are nested in mice; the check of Supplementary
+   Section 4.8 and Table S5 (per mouse, and on D1 a mixed model and a hierarchical bootstrap) runs on the
+   tables' records: `stats nesting --d1 <stats d1's folder> --d6 <d6.json> --d7 <d7.json> --out <tables>`
+   (the mixed model needs statsmodels, the extra `nesting`; the paper's check took D6's `--baseline
+   reported` record, and the equal scoring's gives the same per-mouse result).
 6. **Figures**: below.
 
 ## Running ASTRID as in the paper

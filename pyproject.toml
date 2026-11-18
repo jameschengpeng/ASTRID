@@ -28,7 +28,8 @@ dependencies = [
 [project.optional-dependencies]
 tiff = ["tifffile>=2023.1"]
 reproduce = ["pandas>=2.0", "matplotlib>=3.7", "tifffile>=2023.1"]   # reproduce/astrid_repro (the peer methods apart)
-dev = ["pytest>=8.0", "ruff>=0.5", "tifffile>=2023.1", "pandas>=2.0", "matplotlib>=3.7"]
+nesting = ["statsmodels>=0.14"]                                      # stats.py nesting's mixed model
+dev = ["pytest>=8.0", "ruff>=0.5", "tifffile>=2023.1", "pandas>=2.0", "matplotlib>=3.7", "statsmodels>=0.14"]
 
 [project.scripts]
 astrid = "astrid.cli:main"

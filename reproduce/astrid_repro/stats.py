@@ -31,6 +31,9 @@ Commands (from ``reproduce/``: ``python -m astrid_repro.stats <command> --help``
 - ``d7-split``: D7's error split (Supplementary Equation S24, ``d7_split_table``) from every recording's traces:
   per case and method the gain and residual parts of the squared error below 0.5 Hz, and the x3 cases with a
   gain below 0.5. Output: ``d7_split_cases.csv``, ``d7_split.json`` and ``.md``.
+- ``nesting``: the tests' units nested in mice (Supplementary Table S5, ``nesting``) from the records of ``d1``,
+  ``d6`` and ``d7``: per mouse on every dataset; on D1 also a mixed model (statsmodels, the extra ``nesting``) and
+  a hierarchical bootstrap. Output: ``nesting.json`` and ``.md``.
 """
 
 from __future__ import annotations
@@ -999,6 +1002,174 @@ def d7_split_markdown(record: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+# ------------------------------------------------------------------------------------- imaging locations in mice
+
+NEST_BOOT, NEST_SEED = 10_000, 0       # the hierarchical bootstrap's resamples and seed
+NEST_ALPHA = 0.05                      # the tables' significance
+NEST_OPTIMIZERS = (None, "powell", "nm", "bfgs", "cg")   # the mixed model's: statsmodels' default first
+D6_NEST_COLUMN = "leakage in territory"
+
+
+def nesting_columns(d1_folder: Path, d6: Path, d7: Path) -> list[dict[str, Any]]:
+    """Every column the check covers, from the tables' own per-unit scores: D1's four primary columns
+    (``stats d1``'s ``d1_stats.json`` and ``d1_suite2p.json`` in ``d1_folder``; Holm over the seven comparators),
+    D6's primary column (``stats d6``'s record) and D7's four columns (``stats d7``'s record, the location as the
+    mouse). A unit's mouse is the tables' own: on D1 and D6 the start of the location's name, on D7 the location."""
+    d1 = json.loads((d1_folder / "d1_stats.json").read_text(encoding="utf-8"))
+    s2p = json.loads((d1_folder / "d1_suite2p.json").read_text(encoding="utf-8"))
+    out = []
+    for col, *_ in COLUMNS:
+        c, s = d1[col], s2p[col]
+        if s["locations"] != c["locations"] or s["scores"][OURS] != c["scores"][OURS]:
+            raise SystemExit(f"D1 {col}: d1_suite2p.json's locations or ASTRID's scores are not d1_stats.json's")
+        scores = {m: dict(zip(c["locations"], c["scores"][m], strict=True)) for m in (OURS, *D1_DECLARED)}
+        scores["suite2p"] = dict(zip(s["locations"], s["scores"]["suite2p"], strict=True))
+        p = {m: c["stats"][m]["p_holm"] for m in D1_DECLARED} | {"suite2p": s["stats"]["suite2p"]["p_holm"]}
+        out.append({"dataset": "D1", "column": col, "units": c["locations"], "mouse": c["mouse"], "scores": scores,
+                    "p_holm": p})
+    c = json.loads(d6.read_text(encoding="utf-8"))["columns"][D6_NEST_COLUMN]
+    out.append({"dataset": "D6", "column": D6_NEST_COLUMN, "units": c["locations"], "mouse": c["mouse"],
+                "scores": {m: dict(zip(c["locations"], c["scores"][m], strict=True)) for m in (OURS, *COMPARED)},
+                "p_holm": {m: c["stats"][m]["p_holm"] for m in COMPARED}})
+    cols7 = json.loads(d7.read_text(encoding="utf-8"))["columns"]
+    for col, *_ in COLUMNS:
+        c = cols7[col]
+        out.append({"dataset": "D7", "column": col, "units": c["recordings"], "mouse": c["location"],
+                    "scores": {m: dict(zip(c["recordings"], c["scores"][m], strict=True))
+                               for m in (OURS, *COMPARED)},
+                    "p_holm": {m: c["stats"][m]["p_holm"] for m in COMPARED}})
+    return out
+
+
+def nesting_per_mouse(d: pd.Series, mouse: pd.Series, direction: float) -> dict[str, Any]:
+    """Per mouse the units, the mean and median of d and the units with d < 0, and whether every mouse's mean has
+    the sign of the mean over all units."""
+    per = {}
+    for m in sorted(set(mouse)):
+        x = d[mouse == m]
+        per[m] = {"n": int(x.size), "mean": float(x.mean()), "median": float(x.median()),
+                  "n_negative": int((x < 0).sum())}
+    return {"per_mouse": per, "agrees_in_every_mouse": bool(all(np.sign(v["mean"]) == direction
+                                                                for v in per.values()))}
+
+
+def nesting_mixed_model(d: pd.Series, mouse: pd.Series) -> dict[str, Any]:
+    """d ~ 1 + (1 | mouse) by REML (statsmodels' MixedLM): the intercept, its SE, the Wald z and its p, a t with
+    mice - 1 degrees of freedom and its p, the mouse and residual variances, and whether the fit is singular (the
+    mouse variance below 1e-8 of the residual's, a boundary warning, or no SE). A fit without an SE is refitted
+    with the other optimizers of ``NEST_OPTIMIZERS``; if none gives one, its p is 1."""
+    import warnings
+
+    from scipy import stats as st
+    try:
+        import statsmodels.formula.api as smf
+    except ImportError as err:      # pragma: no cover - optional dependency
+        raise ImportError("the mixed model needs statsmodels: pip install -e \".[nesting]\"") from err
+    df = pd.DataFrame({"d": d.to_numpy(float), "mouse": mouse.to_numpy()})
+    for method in NEST_OPTIMIZERS:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            model = smf.mixedlm("d ~ 1", df, groups=df["mouse"])
+            fit = model.fit(reml=True) if method is None else model.fit(reml=True, method=method)
+        est, se = float(fit.fe_params["Intercept"]), float(fit.bse_fe["Intercept"])
+        if np.isfinite(se) and se > 0:
+            break
+    var_mouse, var_resid = float(fit.cov_re.iloc[0, 0]), float(fit.scale)
+    msgs = sorted({str(w.message).splitlines()[0][:120] for w in caught})
+    k = df.mouse.nunique()
+    ok = bool(np.isfinite(se) and se > 0)
+    z = est / se if ok else float("nan")
+    return {"intercept": est, "se": se if ok else None, "z": z if ok else None,
+            "p_z": float(2 * st.norm.sf(abs(z))) if ok else 1.0, "df_t": k - 1,
+            "p_t": float(2 * st.t.sf(abs(z), k - 1)) if ok else 1.0, "se_estimable": ok,
+            "optimizer": method or "default", "var_mouse": var_mouse, "var_resid": var_resid,
+            "singular": bool(var_mouse < 1e-8 * var_resid or any("boundary" in m.lower() for m in msgs) or not ok),
+            "converged": bool(fit.converged), "warnings": msgs}
+
+
+def nesting_bootstrap(d: pd.Series, mouse: pd.Series) -> dict[str, Any]:
+    """The hierarchical bootstrap (Saravanan et al. 2020): the mice with replacement, then each drawn mouse's units
+    with replacement, the mean of d over the drawn units, ``NEST_BOOT`` times from seed ``NEST_SEED``; the 95 %
+    percentile interval and p = 2 min(P(mean <= 0), P(mean >= 0))."""
+    groups = [d[mouse == m].to_numpy(float) for m in sorted(set(mouse))]
+    rng = np.random.default_rng(NEST_SEED)
+    means = np.empty(NEST_BOOT)
+    for i in range(NEST_BOOT):
+        picks = rng.integers(0, len(groups), len(groups))
+        vals = np.concatenate([g[rng.integers(0, g.size, g.size)] for g in (groups[j] for j in picks)])
+        means[i] = vals.mean()
+    p = min(1.0, 2 * min(float(np.mean(means <= 0)), float(np.mean(means >= 0))))
+    lo, hi = np.percentile(means, [2.5, 97.5])
+    return {"ci_low": float(lo), "ci_high": float(hi), "p": p, "n_boot": NEST_BOOT, "seed": NEST_SEED}
+
+
+def nesting(d1_folder: Path, d6: Path, d7: Path, mixed_model: bool = True) -> dict[str, Any]:
+    """The check of the tests' units nested in mice (Supplementary Section "Imaging locations within mice", Table
+    S5), from the tables' records (``nesting_columns``). Per column and comparator, d = ASTRID's score minus the
+    other method's per unit (lower is better, so d < 0 favors ASTRID); the direction is the sign of d's mean, the
+    significance the table's Holm p below ``NEST_ALPHA``.
+    - ``A`` (every dataset): per mouse (``nesting_per_mouse``);
+    - ``B`` (D1): the mixed model (``nesting_mixed_model``; statsmodels, left out with ``mixed_model`` False);
+    - ``C`` (D1): the hierarchical bootstrap (``nesting_bootstrap``).
+    Holm over the seven comparators of a column for B's two p and C's p (``p_t_holm``, ``p_z_holm``,
+    ``p_holm``)."""
+    record: dict[str, Any] = {"results": []}
+    for col in nesting_columns(d1_folder, d6, d7):
+        units, mouse = pd.Series(col["units"]), pd.Series(col["mouse"])
+        rows = []
+        for m in COMPARED:
+            d = pd.Series([col["scores"][OURS][u] - col["scores"][m][u] for u in units])
+            direction = float(np.sign(d.mean()))
+            r = {"comparison": m, "n": int(d.size), "mean_d": float(d.mean()), "direction": direction,
+                 "p_holm_paper": col["p_holm"][m], "significant": bool(col["p_holm"][m] < NEST_ALPHA),
+                 "A": nesting_per_mouse(d, mouse, direction)}
+            if col["dataset"] == "D1":
+                if mixed_model:
+                    r["B"] = nesting_mixed_model(d, mouse)
+                r["C"] = nesting_bootstrap(d, mouse)
+            rows.append(r)
+        if col["dataset"] == "D1":
+            for key, sub in (("p_t", "B"), ("p_z", "B"), ("p", "C")):
+                if sub in rows[0]:
+                    h = holm({r["comparison"]: r[sub][key] for r in rows})
+                    for r in rows:
+                        r[sub][key + "_holm"] = h[r["comparison"]]
+        record["results"].append({"dataset": col["dataset"], "column": col["column"],
+                                  "units_per_mouse": mouse.value_counts().sort_index().to_dict(), "rows": rows})
+    return record
+
+
+def nesting_markdown(record: dict[str, Any]) -> str:
+    lines = ["# The tests' units nested in mice (a sensitivity check)", "",
+             "d = ASTRID's score minus the other method's per unit; d < 0 favors ASTRID. A: per mouse, the mean d "
+             "(the units with d < 0 of n). B (D1): d ~ 1 + (1 | mouse), REML; Holm p from a t with mice - 1 degrees "
+             f"of freedom and from the Wald z. C (D1): hierarchical bootstrap, {NEST_BOOT:,} resamples, seed "
+             f"{NEST_SEED}, 95 % interval, Holm p. * the table's Holm p below {NEST_ALPHA}.", ""]
+    for res in record["results"]:
+        mice = sorted(res["units_per_mouse"])
+        d1 = res["dataset"] == "D1"
+        head = ["comparison", "mean d, Holm p"] + [f"A: {k}" for k in mice] + ["A: same sign in every mouse"]
+        if d1:
+            head += ["B: intercept", "B: Holm p (t)", "B: Holm p (z)", "B: singular", "C: 95 % interval",
+                     "C: Holm p"]
+        lines += [f"## {res['dataset']}, {res['column']}", "", "| " + " | ".join(head) + " |",
+                  "|" + "---|" * len(head)]
+        for r in res["rows"]:
+            cells = [NAMES[r["comparison"]], f"{r['mean_d']:+.3f}, {r['p_holm_paper']:.4f}"
+                     + (" *" if r["significant"] else "")]
+            cells += [f"{r['A']['per_mouse'][k]['mean']:+.3f} ({r['A']['per_mouse'][k]['n_negative']}/"
+                      f"{r['A']['per_mouse'][k]['n']})" for k in mice]
+            cells.append("yes" if r["A"]["agrees_in_every_mouse"] else "**no**")
+            if d1:
+                b, c = r.get("B"), r["C"]
+                cells += ([f"{b['intercept']:+.3f}", f"{b['p_t_holm']:.4f}", f"{b['p_z_holm']:.4f}",
+                           "yes" if b["singular"] else "no"] if b else ["", "", "", ""])
+                cells += [f"[{c['ci_low']:+.3f}, {c['ci_high']:+.3f}]", f"{c['p_holm']:.4f}"]
+            lines.append("| " + " | ".join(cells) + " |")
+        lines.append("")
+    return "\n".join(lines)
+
+
 # ----------------------------------------------------------------------------------------------------- CLI
 
 def main(argv: list[str] | None = None) -> int:
@@ -1035,6 +1206,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--root", type=Path, required=True, help="the recordings' folders (see d7_tables)")
     p.add_argument("--results", nargs="+", default=None,
                    help="the peers' results folders, relative to each recording's folder (default compare/results)")
+    p.add_argument("--out", type=Path, required=True)
+    p = sub.add_parser("nesting", help="the tests' units nested in mice (Supplementary Table S5)")
+    p.add_argument("--d1", type=Path, required=True, help="stats d1's output folder (d1_stats.json, d1_suite2p.json)")
+    p.add_argument("--d6", type=Path, required=True, help="stats d6's record (the d6.json of its scoring)")
+    p.add_argument("--d7", type=Path, required=True, help="stats d7's record (d7.json)")
+    p.add_argument("--no-mixed-model", action="store_true", help="leave out the mixed model (no statsmodels)")
     p.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
@@ -1082,6 +1259,11 @@ def main(argv: list[str] | None = None) -> int:
         write_json(a.out / "d7_split.json", record)
         text = d7_split_markdown(record)
         (a.out / "d7_split.md").write_text(text, encoding="utf-8")
+    elif a.command == "nesting":
+        record = nesting(a.d1, a.d6, a.d7, mixed_model=not a.no_mixed_model)
+        write_json(a.out / "nesting.json", record)
+        text = nesting_markdown(record)
+        (a.out / "nesting.md").write_text(text, encoding="utf-8")
     else:
         record = d7_tables(a.root)
         write_json(a.out / f"{a.name}.json", record)

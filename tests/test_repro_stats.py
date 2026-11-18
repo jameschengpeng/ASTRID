@@ -328,3 +328,62 @@ def test_error_split_parts_add_up() -> None:
     assert s["g_raw"] == pytest.approx(metrics.gain(y, q), rel=1e-12)
     exact = stats.error_split(2 * q, q, 20.0)
     assert exact["g05"] == pytest.approx(2.0) and exact["resid_part"] == pytest.approx(0.0, abs=1e-20)
+
+
+def nesting_records(folder: Path, seed: int = 6) -> tuple[Path, Path, Path]:
+    """Small records of stats d1, d6 and d7: D1 with 4 mice of 3 locations, ASTRID lower than every method in
+    three mice; D6 with 2 mice; D7 with 2 locations."""
+    rng = np.random.default_rng(seed)
+    locs = [f"{m}_loc{k}" for m in ("A", "B", "C", "D") for k in range(3)]
+    ours = rng.uniform(0.3, 0.5, len(locs))
+    worse = {m: ours + rng.uniform(0.05, 0.2, len(locs)) * np.where(np.arange(len(locs)) < 9, 1, -1)
+             for m in stats.COMPARED}
+    d1, s2p = {}, {}
+    for col, *_ in stats.COLUMNS:
+        scores = {"demix": ours.tolist(), **{m: worse[m].tolist() for m in stats.D1_DECLARED}}
+        d1[col] = {"locations": locs, "mouse": [s.split("_")[0] for s in locs], "scores": scores,
+                   "stats": {m: {"p_holm": 0.01} for m in stats.D1_DECLARED}}
+        s2p[col] = {"locations": locs, "scores": {"demix": ours.tolist(), "suite2p": worse["suite2p"].tolist()},
+                    "stats": {"suite2p": {"p_holm": 0.2}}}
+    stats.write_json(folder / "d1" / "d1_stats.json", d1)
+    stats.write_json(folder / "d1" / "d1_suite2p.json", s2p)
+    six = {"locations": locs[:6], "mouse": ["A"] * 3 + ["B"] * 3,
+           "scores": {m: (ours[:6] if m == "demix" else worse[m][:6]).tolist() for m in ("demix", *stats.COMPARED)},
+           "stats": {m: {"p_holm": 0.03} for m in stats.COMPARED}}
+    stats.write_json(folder / "d6.json", {"columns": {"leakage in territory": six}})
+    seven = {"recordings": [f"L{i % 2}/r{i}" for i in range(6)], "location": [f"L{i % 2}" for i in range(6)],
+             "scores": six["scores"], "stats": six["stats"]}
+    stats.write_json(folder / "d7.json", {"columns": {col: seven for col, *_ in stats.COLUMNS}})
+    return folder / "d1", folder / "d6.json", folder / "d7.json"
+
+
+def test_nesting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(stats, "NEST_BOOT", 300)                        # fewer resamples, for speed
+    d1, d6, d7 = nesting_records(tmp_path)
+    rec = stats.nesting(d1, d6, d7, mixed_model=False)
+    assert [(r["dataset"], r["column"]) for r in rec["results"]][3:6] == [
+        ("D1", "leakage x3"), ("D6", "leakage in territory"), ("D7", "error x1")]
+    first = rec["results"][0]
+    assert first["units_per_mouse"] == {"A": 3, "B": 3, "C": 3, "D": 3}
+    row = next(r for r in first["rows"] if r["comparison"] == "fissa")
+    per = row["A"]["per_mouse"]
+    assert all(per[m]["mean"] < 0 for m in "ABC") and per["D"]["mean"] > 0 and per["D"]["n_negative"] == 0
+    assert not row["A"]["agrees_in_every_mouse"] and row["significant"] and row["direction"] == -1
+    c = row["C"]
+    assert c["ci_low"] < c["ci_high"] and c["n_boot"] == stats.NEST_BOOT and 0 < c["p_holm"] <= 1
+    assert stats.nesting_bootstrap(pd.Series([-1.0, -2.0, 1.0]), pd.Series(["a", "a", "b"])) == \
+        stats.nesting_bootstrap(pd.Series([-1.0, -2.0, 1.0]), pd.Series(["a", "a", "b"]))   # seeded
+    raw = {r["comparison"]: r["C"]["p"] for r in first["rows"]}
+    assert {r["comparison"]: r["C"]["p_holm"] for r in first["rows"]} == metrics.holm(raw)
+    assert "B" not in row and "C" not in rec["results"][4]["rows"][0]
+    assert stats.main(["nesting", "--d1", str(d1), "--d6", str(d6), "--d7", str(d7), "--no-mixed-model",
+                       "--out", str(tmp_path / "out")]) == 0
+
+
+def test_nesting_mixed_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("statsmodels")
+    monkeypatch.setattr(stats, "NEST_BOOT", 50)
+    rec = stats.nesting(*nesting_records(tmp_path), mixed_model=True)
+    b = rec["results"][0]["rows"][0]["B"]
+    assert b["df_t"] == 3 and {"p_t_holm", "p_z_holm", "singular", "var_mouse"} <= set(b)
+    assert b["intercept"] == pytest.approx(rec["results"][0]["rows"][0]["mean_d"], abs=0.05)
