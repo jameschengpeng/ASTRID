@@ -110,6 +110,16 @@ def test_d1_refuses_a_location_without_a_method_and_suite2p_without_astrids_case
         stats.d1({**tables, "leakage": t.drop(index=one)})
 
 
+def test_one_wilcoxon_with_its_method() -> None:
+    d = np.array([0.0, 0.0, 0.3, -0.1, 0.2, 0.25, 0.4, 0.05, -0.02, 0.15, 0.3, 0.12, 0.07, 0.22, 0.31, 0.09])
+    assert metrics.wilcoxon_p(d) == wilcoxon(d).pvalue                      # SciPy's default: zeros, n > 13
+    assert metrics.wilcoxon_p(d, "exact") == wilcoxon(d, method="exact").pvalue
+    assert metrics.wilcoxon_p(d) != metrics.wilcoxon_p(d, "exact")          # the two differ with zeros
+    assert metrics.wilcoxon_p(np.zeros(5), "exact") == 1.0
+    with pytest.raises(ValueError, match="method"):
+        metrics.wilcoxon_p(d, "asymptotic")
+
+
 def test_ablations_exact_test_holm_over_three_and_the_same_cases() -> None:
     full = d1_tables(seed=1)
     ours = {k: v[v.method == "demix"] for k, v in full.items()}

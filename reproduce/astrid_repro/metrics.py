@@ -10,7 +10,8 @@ tests", "Two-color test on D6", "Statistics and runtime").
 - ``usable`` and the failure rule: a trace that is missing, not finite or constant is scored as the raw ROI
   average (its error, a leakage of 1).
 - ``wilcoxon_p`` and ``holm``: the paired two-sided Wilcoxon signed-rank test over the units (imaging
-  locations, recordings, videos or cells) and Holm's correction over a measure's comparisons.
+  locations, recordings, videos or cells), the one test of every table, and Holm's correction over a measure's
+  comparisons.
 """
 
 from __future__ import annotations
@@ -65,9 +66,21 @@ def usable(x: np.ndarray | None) -> bool:
         and float(np.std(x)) > 0
 
 
-def wilcoxon_p(d: np.ndarray) -> float:
-    """Two-sided Wilcoxon signed-rank p of the paired differences ``d`` (1 when all are zero)."""
-    return float(wilcoxon(d).pvalue) if np.any(np.asarray(d) != 0) else 1.0
+WILCOXON_METHODS = ("auto", "exact")
+
+
+def wilcoxon_p(d: np.ndarray, method: str = "auto") -> float:
+    """Two-sided Wilcoxon signed-rank p of the paired differences ``d``, zero differences dropped (SciPy's
+    ``zero_method="wilcox"``); 1 when all are zero. ``method`` is SciPy's (1.15), and the paper used two:
+    - "auto", SciPy's default, in every table but the ablations': the exact null distribution for up to 50
+      differences without zeros or ties; with zeros or ties, exhaustive permutations for up to 13 differences
+      and the normal approximation above;
+    - "exact", in the ablation table (Supplementary Table S10, ``stats.ablations``), where an imaging location
+      without astrocyte components can give a zero difference: the exact null distribution of the nonzero
+      differences, ties not taken into account."""
+    if method not in WILCOXON_METHODS:
+        raise ValueError(f"method must be one of {WILCOXON_METHODS}, got {method!r}")
+    return float(wilcoxon(d, method=method).pvalue) if np.any(np.asarray(d) != 0) else 1.0
 
 
 def holm(p: dict[str, float]) -> dict[str, float]:

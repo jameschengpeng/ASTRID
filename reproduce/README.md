@@ -178,7 +178,8 @@ were left out of the input of every method.
 5. **Statistics and tables.** The mean ± SD is taken over the units: the imaging locations on D1 and D6, the
    recordings on D7, the videos on D2, D4 and D5, the cells on D3. ASTRID is compared with each other method by a
    paired two-sided Wilcoxon signed-rank test, with Holm's correction over the comparisons of each measure
-   (`stats.py`, `tables_public.py`).
+   (`stats.py`, `tables_public.py`). The test is `metrics.wilcoxon_p`, zero differences dropped, with SciPy's
+   default method in every table but the ablations', which used its exact method.
 6. **Figures**: below.
 
 ## Running ASTRID as in the paper

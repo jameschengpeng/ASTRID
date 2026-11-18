@@ -1,13 +1,14 @@
 """The statistics and tables of D1, D6, D7 and the ablations, from the per-case scores (Methods, "Statistics";
 Supplementary, "Injection and leakage tests", "Two-color test on D6").
 
-Every table follows one rule. A unit's score is the median of a measure over its cases: on D1 and D6 the unit is
-the imaging location (all its recordings together), on D7 the recording. Each column gives the mean ± SD over
-the units and, for each other method, ASTRID minus that method, the units where ASTRID is better, and the p of a
-two-sided paired Wilcoxon signed-rank test over the units, Holm-corrected over the column's comparisons
-(``metrics.wilcoxon_p``, ``metrics.holm``). The raw ROI average is a reference row without a test. Methods are
-named as in the score tables: ``demix`` (ASTRID), ``tuncat``, ``tuncat_astro`` (TUnCaT + terr.), ``fissa``,
-``cnmf``, ``cnmf_astro`` (CNMF + terr.), ``ring``, ``suite2p`` and ``roi`` (the raw ROI average).
+Every table follows one rule. A unit's score is the median of a measure over its cases: on D1 and D6 the unit is the
+imaging location (all its recordings together), on D7 the recording. Each column gives the mean ± SD over the units
+and, for each other method, ASTRID minus that method, the units where ASTRID is better, and the p of a two-sided
+paired Wilcoxon signed-rank test over the units, Holm-corrected over the column's comparisons
+(``metrics.wilcoxon_p`` with SciPy's default method, the ablations with its exact method; ``metrics.holm``). The raw
+ROI average is a reference row without a test. Methods are named as in the score tables: ``demix`` (ASTRID),
+``tuncat``, ``tuncat_astro`` (TUnCaT + terr.), ``fissa``, ``cnmf``, ``cnmf_astro`` (CNMF + terr.), ``ring``,
+``suite2p`` and ``roi`` (the raw ROI average).
 
 Commands (from ``reproduce/``: ``python -m astrid_repro.stats <command> --help``):
 - ``d1``: D1's injection and leakage tests (``d1``). Input: the per-case scores pooled over D1's recordings,
@@ -41,7 +42,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks
-from scipy.stats import wilcoxon
 
 from astrid_repro.metrics import holm, leakage, lowpass_fourier, usable, wilcoxon_p
 from astrid_repro.public_data import minus_baseline
@@ -335,12 +335,13 @@ def ablation_by_location(t: pd.DataFrame, value: str, scale: float, site: str | 
 
 def ablation_compare(loc: pd.DataFrame, better: str) -> dict[str, dict[str, float]]:
     """Full against each variant over the locations: Full minus the variant, the locations where Full is
-    better, the exact Wilcoxon p (zero differences dropped) and Holm's over the variants."""
+    better, the Wilcoxon p with the exact method (``metrics.wilcoxon_p``: zero differences dropped) and Holm's
+    over the variants."""
     stats: dict[str, dict[str, float]] = {}
     raw: dict[str, float] = {}
     for v in VARIANTS:
         d = (loc["full"] - loc[v]).to_numpy()
-        p = float(wilcoxon(d, method="exact").pvalue) if np.any(d != 0) else 1.0
+        p = wilcoxon_p(d, method="exact")
         raw[v] = p
         wins = int((d < 0).sum()) if better == "lower" else int((d > 0).sum())
         stats[v] = {"mean_diff": float(d.mean()), "wins": wins, "n": int(d.size),
