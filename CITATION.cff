@@ -44,15 +44,18 @@ preferred-citation:
     - given-names: Erin
       family-names: Carey
       affiliation: "The Salk Institute for Biological Studies"
+    - given-names: Songtao
+      family-names: Wei
+      affiliation: "Virginia Polytechnic Institute and State University"
+    - given-names: Axel
+      family-names: Nimmerjahn
+      affiliation: "The Salk Institute for Biological Studies"
     - given-names: Yue
       family-names: Wang
       affiliation: "Virginia Polytechnic Institute and State University"
     - given-names: Guoqiang
       family-names: Yu
       affiliation: "Tsinghua University"
-    - given-names: Axel
-      family-names: Nimmerjahn
-      affiliation: "The Salk Institute for Biological Studies"
     - given-names: Yizhi
       family-names: Wang
       affiliation: "Virginia Polytechnic Institute and State University"
