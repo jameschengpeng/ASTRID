@@ -240,14 +240,17 @@ the code that draws the data panels of its figures.
   figure of D2, D4 and D5). For D3, the export every method read is built from the CRCNS download, with the
   ROI of each cell from `reproduce/cai1_rois`, drawn by hand once, blind to all methods (the dataset ships
   none).
-- **With the authors' recordings:** D1, D6 and D7 are available from Axel Nimmerjahn on reasonable request.
+- **With the authors' recordings:** D1, D6 and D7 are available from Axel Nimmerjahn on reasonable request,
+  as the documented input files that the builders below read, with imaging locations and recordings named
+  generically.
   Their settings, the ROI detection, the builders of their tests and the statistics of their
   tables are here: `reproduce/astrid_repro/d1.py`, `d7.py` and `d6.py` read documented input files (the ROIs, the
   AQuA2 event counts and the movies, on D6 the two channels of each recording), add the known signals of the
   injection and leakage tests (D1, D7) or make the two movies of the two-color test (D6), fit and export the cases
   for the peer methods, and score them; `stats.py` makes the tables. D6's table in the paper scores every peer
-  trace after its own running baseline is removed (`stats d6 --baseline equal`). Their figures are not part of this
-  code.
+  trace after its own running baseline is removed (`stats d6 --baseline equal`). Their figures, the simulations behind ASTRID's
+  default settings and several further checks of the paper were made with the authors' in-house analysis code,
+  which is available from James Cheng Peng on request.
 
 ## License
 

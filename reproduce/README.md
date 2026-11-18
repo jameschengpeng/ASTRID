@@ -1,7 +1,7 @@
 # Reproducing the paper's analysis
 
 This folder holds what is needed to rerun the paper's evaluation of ASTRID on its seven datasets, on top of the
-`astrid` package. The parts in italics wait on the decisions noted there.
+`astrid` package.
 
 Install the extra `reproduce` (pandas, matplotlib) with the package (`pip install -e ".[reproduce]"`) and run
 the modules from this folder (`python -m astrid_repro.<module> --help`). The peer methods (FISSA, TUnCaT, CaImAn, Suite2p)
@@ -281,7 +281,7 @@ The tables are those `tables_public` writes; the other paths are those given to 
 | Fig. 4B | D3: the example recording's mean image and ROI, and each method's standardized trace over the predicted calcium, with the spikes | `cai1.example`, `cai1.draw_image`, `cai1.draw_traces` |
 | Supp. Fig. S6A, C, E | D2, D4, D5: each method's F1 per video, the Holm-corrected marks | `public.draw_scores` |
 | Supp. Fig. S6B, D, F | D2, D4, D5: the example video's mean image and ROI masks, and the example ROI's trace as the evaluation sees it, with the labeled or simulated transients and each method's detections | `public.example`, `public.draw_image`, `public.draw_traces` |
-| Figs. 1-3; Supp. Figs. S1-S5 | D1, D6, D7, and the simulations of Supp. Fig. S5 | *not part of this code yet* |
+| Figs. 1-3; Supp. Figs. S1-S5 | D1, D6, D7, and the simulations of Supp. Fig. S5 | not part of this code (made with the authors' in-house analysis code, available from James Cheng Peng on request) |
 
 **Example rules** (Supplementary Section "Example panels"; each module's docstring gives the rule in full):
 
