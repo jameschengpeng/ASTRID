@@ -25,6 +25,7 @@ A port or a change of GPL-2 code keeps its license, so these folders are kept ap
 | `astrid_repro/metrics.py` | the measures: the injection test's error (below 0.5 Hz), the leakage, the gain, the failure rule; the paired Wilcoxon signed-rank test and Holm's correction |
 | `astrid_repro/run.py` | ASTRID on D2–D5 as the paper ran it: every video at every setting of the dataset's grid (`python -m astrid_repro.run D2 --data <archive> --out <results>`) |
 | `astrid_repro/abo_crop.py` | D2's movies: the URLs of the ten public Allen movies and TUnCaT's crop of them (the first 20 % of frames, the central 200 × 200 pixels) |
+| `astrid_repro/cases.py`, `d1.py`, `d7.py`, `d6.py` | the tests of D1, D7 and D6 from documented input files: the injection and leakage cases of D1 and D7 (the known signals added to the movie), the one-color and neuronal movies of D6, ASTRID's fits, the export of the cases for the peer methods, the per-case scores |
 | `astrid_repro/peers.py` | FISSA, TUnCaT and TUnCaT + terr., CNMF and CNMF + terr. (CaImAn) on the exported cases of D1, D6 and D7, at the paper's settings |
 | `astrid_repro/cai1_peers.py` | FISSA, TUnCaT and CNMF (CaImAn) on the recordings of D3's export, at the paper's settings (CNMF also at each setting of its cross-validation grid) |
 | `astrid_repro/suite2p_runner.py` | Suite2p's neuropil subtraction on given masks: whole videos (D2, D4, D5), cai-1 (D3) and exported cases |
@@ -41,6 +42,8 @@ A port or a change of GPL-2 code keeps its license, so these folders are kept ap
   `demix`, D1 with its evidence map, candidates and territory, D6's configuration, and D7 with its baseline.
 - From the saved per-case scores and traces, every number of the paper's tables is recomputed exactly: D1, the
   ablations, D2–D5 with the cross-validation, D6 and D7.
+- The builders of D1, D7 and D6, run from their input files, give the analysis code's cases, fits, exports and
+  scores bit for bit, on a recording of each (D7: three).
 - The ROI detection gives the ROIs of the paper's D1 run.
 - The figure code draws Figure 4 and Supplementary Figure S6 with the values of the paper's figures: every point,
   line, image, outline, band and text the paper's panels draw, compared one by one, and the examples, windows
@@ -144,18 +147,50 @@ were left out of the input of every method.
 
    TUnCaT and CNMF also ran with the astrocyte territory as extra components on D1, D6 and D7 ("+ terr.").
 4. **Tests and scores.**
-   - **D1 and D7:** the injection and leakage tests, scored by error and leakage (`metrics.py`). *The case
-     builders, which add the known signals to the movies before the fits, wait on the release of D1 and D7.*
-   - **D6:** the leakage of the real astrocyte channel, from the sum of the two channels against the neuronal
-     channel alone, below 5 Hz and below 0.5 Hz, and the kept size of the neurons' own transients
-     (`stats.py`). ASTRID's and the ring subtraction's traces are F - F0 of each movie. The paper's table
-     (Supplementary Table S7) scores every other trace after its own running baseline is removed by ASTRID's
-     rule, on each movie (`--baseline equal`); without this step (`--baseline reported`, the default) the means
-     differ by at most 0.015:
+   - **D1, D7 and D6** start from the input files that `d1.py`, `d7.py` and `d6.py` document in their docstrings,
+     which give every array: per imaging location `location.npz` (its ROIs and the constants that must match
+     `datasets.yaml`, on D1 and D6 with its candidates and AQuA2 event counts), per recording `<recording>.h5` (its
+     movie, on D7 with its own event counts; on D6 its two registered channels with their scale g and b). Each
+     recording runs into its own folder `<run>` = `<root>/<location>_<recording>`, with one BLAS thread
+     (`OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1`), as in the paper's runs: the last digits of the
+     fits depend on it.
+   - **D1 and D7:** the injection and leakage tests (`cases.py`). `run` builds the cases, adding the known
+     signals to the movie, fits them, exports them for the peers (`<run>/compare`) and scores them by error and
+     leakage; `score` scores them again with the peers' results:
 
      ```bash
-     python -m astrid_repro.stats d6-scores --run <root>/<location>_<recording> --baseline equal  # each recording
-     python -m astrid_repro.stats d6 --root <root> --baseline equal --out <tables>                 # Table S7
+     python -m astrid_repro.d1 run --data <inputs> --location <location> --recording <recording> --out <root> \
+         --workers 16
+     python -m astrid_repro.peers launch --cases <run>/compare --methods fissa,tuncat,cnmf --runners 16
+     python -I astrid_repro/suite2p_runner.py cases --cases <run>/compare --results <run>/suite2p --threads 8 \
+         --out <run>/suite2p
+     python -m astrid_repro.d1 score --run <run> --results <run>/compare/results <run>/suite2p
+     python -m astrid_repro.d1 pool --root <root> --out <scores>
+     python -m astrid_repro.stats d1 --scores <scores> --out <tables>          # Table 2, Supplementary Table S6
+     ```
+
+     The ablations I, II and III run each recording again with `d1 run --variant I|II|III --cases
+     <run>/compare` into a root of their own, pooled with `d1 pool`; then `stats ablations --full <scores>
+     --variant I=<scores I> II=<scores II> III=<scores III> --out <tables>` (Supplementary Table S10). D7 runs
+     the same with `astrid_repro.d7` (`--location D7_location1` or `D7_location2`), without `pool`:
+     `stats d7 --root <root> --out <tables>` (Supplementary Tables S8 and S9).
+   - **D6:** the leakage of the real astrocyte channel. `d6 run` makes the one-color movie M (both channels)
+     and the neuronal movie R from the two channels, fits and exports the cases on each (`<run>/M`, `<run>/R`),
+     and the peers run on both exports. The scores are the leakage from M against R, below 5 Hz and below
+     0.5 Hz, and the kept size of the neurons' own transients. ASTRID's and the ring subtraction's traces are
+     F - F0 of each movie. The paper's table scores every other trace after its own running baseline is removed
+     by ASTRID's rule, on each movie (`--baseline equal`); without this step (`--baseline reported`, the
+     default) the means differ by at most 0.015:
+
+     ```bash
+     python -m astrid_repro.d6 run --data <inputs> --location <location> --recording <recording> --out <root> \
+         --workers 16
+     python -m astrid_repro.peers launch --cases <run>/M/compare --results <run>/M/peers \
+         --methods fissa,tuncat,cnmf --runners 16                                  # and the same for R
+     python -I astrid_repro/suite2p_runner.py cases --cases <run>/M/compare --results <run>/M/suite2p \
+         --threads 8 --out <run>/M/suite2p                                         # and the same for R
+     python -m astrid_repro.stats d6-scores --run <run> --baseline equal            # each recording
+     python -m astrid_repro.stats d6 --root <root> --baseline equal --out <tables>  # Supplementary Table S7
      ```
    - **D2, D4 and D5:** the F1 score of transient detection with TUnCaT's evaluation (`tuncat_eval/`, GPL-2),
      handed to the MIT code at run time:

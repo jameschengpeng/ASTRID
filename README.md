@@ -241,10 +241,13 @@ the code that draws the data panels of its figures.
   ROI of each cell from `reproduce/cai1_rois`, drawn by hand once, blind to all methods (the dataset ships
   none).
 - **With the authors' recordings:** D1, D6 and D7, available from the corresponding author, Axel Nimmerjahn, on
-  reasonable request. Their settings, the statistics of their tables and the ROI detection are here; the
-  builders of their injection and leakage tests and their figures will follow with the data. D6's table in the
-  paper scores every peer trace after its own running baseline is removed: `python -m astrid_repro.stats d6
-  --baseline equal`, after `d6-scores --baseline equal` on each recording.
+  reasonable request. Their settings, the ROI detection, the builders of their tests and the statistics of their
+  tables are here: `reproduce/astrid_repro/d1.py`, `d7.py` and `d6.py` read documented input files (the ROIs, the
+  AQuA2 event counts and the movies, on D6 the two channels of each recording), add the known signals of the
+  injection and leakage tests (D1, D7) or make the two movies of the two-color test (D6), fit and export the cases
+  for the peer methods, and score them; `stats.py` makes the tables. D6's table in the paper scores every peer
+  trace after its own running baseline is removed (`stats d6 --baseline equal`). Their figures are not part of this
+  code yet.
 
 ## License
 
