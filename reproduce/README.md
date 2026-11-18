@@ -1,7 +1,7 @@
 # Reproducing the paper's analysis
 
 This folder holds what is needed to rerun the paper's evaluation of ASTRID on its seven datasets, on top of the
-`astrid` package. **Status: draft.** The parts marked *to come* wait on the decisions noted there.
+`astrid` package. The parts in italics wait on the decisions noted there.
 
 Install the extra `reproduce` (pandas, matplotlib) with the package (`pip install -e ".[reproduce]"`) and run
 the modules from this folder (`python -m astrid_repro.<module> --help`). The peer methods (FISSA, TUnCaT, CaImAn, Suite2p)
