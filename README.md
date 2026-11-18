@@ -240,7 +240,9 @@ the code that draws the data panels of its figures.
   none).
 - **With the authors' recordings:** D1, D6 and D7, whose availability is to be announced. Their settings, the
   statistics of their tables and the ROI detection are here; the builders of their injection and leakage tests
-  and their figures will follow with the data.
+  and their figures will follow with the data. D6's table in the paper scores every peer trace after its own
+  running baseline is removed: `python -m astrid_repro.stats d6 --baseline equal`, after `d6-scores --baseline
+  equal` on each recording.
 
 ## License
 

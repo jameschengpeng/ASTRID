@@ -116,7 +116,16 @@ were left out of the input of every method.
    - **D1 and D7:** the injection and leakage tests, scored by error and leakage (`metrics.py`). *The case
      builders, which add the known signals to the movies before the fits, wait on the release of D1 and D7.*
    - **D6:** the leakage of the real astrocyte channel, from the sum of the two channels against the neuronal
-     channel alone, below 5 Hz (`stats.py d6-scores`).
+     channel alone, below 5 Hz and below 0.5 Hz, and the kept size of the neurons' own transients
+     (`stats.py`). ASTRID's and the ring subtraction's traces are F - F0 of each movie. The paper's table
+     (Supplementary Table S7) scores every other trace after its own running baseline is removed by ASTRID's
+     rule, on each movie (`--baseline equal`); without this step (`--baseline reported`, the default) the means
+     differ by at most 0.015:
+
+     ```bash
+     python -m astrid_repro.stats d6-scores --run <root>/<location>_<recording> --baseline equal  # each recording
+     python -m astrid_repro.stats d6 --root <root> --baseline equal --out <tables>                 # Table S7
+     ```
    - **D2, D4 and D5:** the F1 score of transient detection with TUnCaT's evaluation (`tuncat_eval/`, GPL-2),
      handed to the MIT code at run time:
 
