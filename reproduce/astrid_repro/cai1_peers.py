@@ -6,11 +6,14 @@ own and run this module there (in the paper: FISSA 1.0.0 and TUnCaT, its v1.0 sc
 environment; CaImAn 1.13.2 in its own). It imports none of them until a method needs it, and nothing from
 ``astrid``, so it can also be copied and run on its own.
 
-Per recording ``<data>/<name>.h5`` (``mov`` (T, H, W) int16, registered; ``roi`` (H, W) bool), the methods:
-- ``fissa``: FISSA on the ROI (4 neuropil sub-regions, its defaults) over the alpha grid of its authors' scripts
-  on the Allen data; ``fissa_a=<alpha>`` is the separated signal matched to the ROI, ``fissa_raw`` FISSA's raw ROI
-  trace;
-- ``tuncat``: TUnCaT on the single mask over its 13-value alpha grid, one call per alpha (flexible alpha,
+D3 was not in TUnCaT's benchmark, so the alpha grids here are the TUnCaT authors' D2 (Allen) grids applied to
+D3, TUnCaT's extended by two values. Per recording ``<data>/<name>.h5`` (``mov`` (T, H, W) int16, registered;
+``roi`` (H, W) bool), the methods:
+- ``fissa``: FISSA on the ROI (4 neuropil sub-regions, its defaults) over the 9 alphas of its authors' script for
+  the Allen data (``FISSA_ALPHAS``); ``fissa_a=<alpha>`` is the separated signal matched to the ROI, ``fissa_raw``
+  FISSA's raw ROI trace;
+- ``tuncat``: TUnCaT on the single mask over 13 alphas (``TUNCAT_ALPHAS``: the 11 of its authors' script for the
+  Allen data, 0.1 to 30, and 50 and 100), one call per alpha (flexible alpha,
   tolerance 1e-4, at most 20,000 iterations, the values of its v1.0 scripts); ``tuncat_a=<alpha>``, with
   ``tuncat_raw`` and ``tuncat_bg``;
 - ``cnmf``: CaImAn's CNMF seeded with the ROI, as its seeded script for the Allen data ran it (p = 1, one
@@ -42,8 +45,8 @@ from typing import Any
 import h5py
 import numpy as np
 
-FISSA_ALPHAS = (0.01, 0.02, 0.03, 0.05, 0.1, 0.2, 0.3, 0.5, 1.0)                  # FISSA_ABO.py
-TUNCAT_ALPHAS = (0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10, 20, 30, 50, 100)            # TUnCaT_multi_ABO.py
+FISSA_ALPHAS = (0.01, 0.02, 0.03, 0.05, 0.1, 0.2, 0.3, 0.5, 1.0)                  # FISSA_ABO.py's grid
+TUNCAT_ALPHAS = (0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10, 20, 30, 50, 100)   # TUnCaT_multi_ABO.py's 11, and 50, 100
 TUNCAT: dict[str, Any] = dict(Qclip=0, th_pertmin=1, epsilon=0, th_residual=0, nbin=1,
                               bin_option="downsample", multi_alpha=True, flexible_alpha=True, tol=1e-4,
                               max_iter=20000)

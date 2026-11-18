@@ -131,6 +131,17 @@ were left out of the input of every method.
      on each recording's exported cases;
    - the ring subtraction, `ring__<rec>` in ASTRID's output, or `ring.py` on the public data.
 
+   The alpha grids of FISSA and TUnCaT on D2–D5 are those of the scripts of TUnCaT's paper-reproduction archive
+   for each dataset. D3 was not in TUnCaT's benchmark, so it took D2's (Allen) grids, with TUnCaT's extended by
+   50 and 100 (`cai1_peers.py`):
+
+   | Dataset | FISSA alpha | TUnCaT alpha (floating) |
+   |---|---|---|
+   | D2 (ABO) | 0.01, 0.02, 0.03, 0.05, 0.1, 0.2, 0.3, 0.5, 1 (9 values, `FISSA_ABO.py`) | 0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10, 20, 30 (11 values, `TUnCaT_multi_ABO.py`) |
+   | D3 (cai-1) | D2's (9 values) | D2's and 50, 100 (13 values) |
+   | D4 (NAOMi) | 0.001, 0.002, 0.003, 0.005, 0.01, 0.02, 0.03, 0.05, 0.1, 0.2, 0.3, 0.5, 1 (13 values, `FISSA_NAOMi.py`), and 0.0005 | 0.01, 0.02, 0.03, 0.05, 0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10 (13 values, `TUnCaT_multi_NAOMi.py`) |
+   | D5 (1p) | 0.001, 0.002, 0.003, 0.005, 0.01, 0.02, 0.03, 0.05, 0.1, 0.2, 0.3, 0.5, 1 (13 values, `FISSA_1p.py`) | 0.01, 0.02, 0.03, 0.05, 0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10 (13 values, `TUnCaT_multi_1p.py`) |
+
    TUnCaT and CNMF also ran with the astrocyte territory as extra components on D1, D6 and D7 ("+ terr.").
 4. **Tests and scores.**
    - **D1 and D7:** the injection and leakage tests, scored by error and leakage (`metrics.py`). *The case
