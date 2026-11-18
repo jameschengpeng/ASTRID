@@ -120,7 +120,7 @@ def test_one_wilcoxon_with_its_method() -> None:
         metrics.wilcoxon_p(d, "asymptotic")
 
 
-def test_ablations_exact_test_holm_over_three_and_the_same_cases() -> None:
+def test_ablations_default_test_holm_over_three_and_the_same_cases() -> None:
     full = d1_tables(seed=1)
     ours = {k: v[v.method == "demix"] for k, v in full.items()}
     worse = {k: v.assign(err_05hz=v.get("err_05hz", 0) + 0.1, leak=v.get("leak", 0) + 0.1) for k, v in ours.items()}
@@ -131,7 +131,7 @@ def test_ablations_exact_test_holm_over_three_and_the_same_cases() -> None:
     s = rec["error x1"]["stats"]
     assert s["II"]["p"] == 1.0 and s["II"]["n_nonzero"] == 0 and s["II"]["wins"] == 0  # identical: no test
     d = np.asarray(rec["error x1"]["scores"]["full"]) - np.asarray(rec["error x1"]["scores"]["I"])
-    assert s["I"]["p"] == wilcoxon(d, method="exact").pvalue and s["I"]["wins"] == s["I"]["n"] == 8
+    assert s["I"]["p"] == wilcoxon(d).pvalue and s["I"]["wins"] == s["I"]["n"] == 8
     assert {v: s[v]["p_holm"] for v in stats.VARIANTS} == metrics.holm({v: s[v]["p"] for v in stats.VARIANTS})
     assert rec["kept correlation x1"]["better"] == "higher"
     n3 = int((low.scale == 3).sum())

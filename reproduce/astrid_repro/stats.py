@@ -5,7 +5,7 @@ Every table follows one rule. A unit's score is the median of a measure over its
 imaging location (all its recordings together), on D7 the recording. Each column gives the mean ± SD over the units
 and, for each other method, ASTRID minus that method, the units where ASTRID is better, and the p of a two-sided
 paired Wilcoxon signed-rank test over the units, Holm-corrected over the column's comparisons
-(``metrics.wilcoxon_p`` with SciPy's default method, the ablations with its exact method; ``metrics.holm``). The raw
+(``metrics.wilcoxon_p`` with SciPy's default method, in every table; ``metrics.holm``). The raw
 ROI average is a reference row without a test. Methods are named as in the score tables: ``demix`` (ASTRID),
 ``tuncat``, ``tuncat_astro`` (TUnCaT + terr.), ``fissa``, ``cnmf``, ``cnmf_astro`` (CNMF + terr.), ``ring``,
 ``suite2p`` and ``roi`` (the raw ROI average).
@@ -335,13 +335,13 @@ def ablation_by_location(t: pd.DataFrame, value: str, scale: float, site: str | 
 
 def ablation_compare(loc: pd.DataFrame, better: str) -> dict[str, dict[str, float]]:
     """Full against each variant over the locations: Full minus the variant, the locations where Full is
-    better, the Wilcoxon p with the exact method (``metrics.wilcoxon_p``: zero differences dropped) and Holm's
-    over the variants."""
+    better, the Wilcoxon p (``metrics.wilcoxon_p``, SciPy's default method: zero differences dropped) and
+    Holm's over the variants."""
     stats: dict[str, dict[str, float]] = {}
     raw: dict[str, float] = {}
     for v in VARIANTS:
         d = (loc["full"] - loc[v]).to_numpy()
-        p = wilcoxon_p(d, method="exact")
+        p = wilcoxon_p(d)
         raw[v] = p
         wins = int((d < 0).sum()) if better == "lower" else int((d > 0).sum())
         stats[v] = {"mean_diff": float(d.mean()), "wins": wins, "n": int(d.size),
@@ -392,7 +392,7 @@ def ablation_markdown(record: dict[str, Any]) -> str:
              "Each location's score is the median over its cases; mean ± SD over the locations. Gain deviation "
              "is |gain - 1|. For each variant: Full minus it, the locations where Full is better (lower error, "
              "leakage and gain deviation; higher kept correlation), and the p of a two-sided paired Wilcoxon "
-             "signed-rank test over the locations (the exact test), Holm-corrected over the three variants of "
+             "signed-rank test over the locations (SciPy's default method), Holm-corrected over the three variants of "
              "each column.", ""]
     for title, prim in (("Primary", True), ("Secondary", False)):
         specs = [c for c in D1_MEASURES if c[6] == prim]
