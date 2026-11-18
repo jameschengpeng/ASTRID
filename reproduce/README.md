@@ -82,6 +82,8 @@ were left out of the input of every method.
    - On D2–D5, every (kappa_d, kappa_np) pair of the dataset's grid is run on every video (`run.py`, into the
      layout `tables_public` reads). Leave-one-video-out cross-validation (leave-one-cell-out on D3) then picks
      the setting that is applied to each held-out video (`cv.py`).
+   - D5's nine sub-videos are crops of three recordings. `tables_public public --dataset 1p --folds recording`
+     holds out the three crops of a recording together, for every method (`cv_1p_by_recording`).
 3. **Peer methods**, with their authors' code (`peers.py` on D1, D6 and D7, `cai1_peers.py` on D3,
    `tuncat_peers` on D2, D4 and D5, `suite2p_runner.py`). On D2, D4 and D5, the paper reran the scripts of
    TUnCaT's paper-reproduction archive (`tuncat_peers`); the traces those scripts' authors released, in
@@ -202,12 +204,15 @@ were left out of the input of every method.
 
      ```bash
      python -m astrid_repro.tables_public grids --dataset ABO --archive <TUnCaT archive> --ours <root> ... \
-         --peers <root> ... --cnmf-grid <grid> \
+         --peers <root> ... --cnmf-grid <grid> --suite2p <root> \
          --scorer tuncat_eval.evaluation:scorer --cnmf-fill tuncat_eval.evaluation:cnmf_fill --out <grids>
+     python -m astrid_repro.tables_public public --dataset ABO --grids <grids> --out <tables>   # cv_ABO
+     python -m astrid_repro.tables_public public --dataset 1p --grids <grids> --folds recording \
+         --out <tables>                                                        # cv_1p_by_recording
      ```
    - **D3:** the correlation with the calcium predicted from the recorded spikes (`public_data.py`), scored two
-     ways, both reported. ASTRID's trace is ΔF/F0, its running baseline removed by the fit. As first scored,
-     every other trace has only its mean removed. With the same baseline, every other trace first has its own
+     ways, both reported. ASTRID's trace is ΔF/F0, its running baseline removed by the fit. In the published
+     scoring, every other trace has only its mean removed. With the same baseline, every other trace first has its own
      running baseline removed by ASTRID's rule (the 10th percentile of 1-s means in a moving 60-s window):
 
      ```bash
