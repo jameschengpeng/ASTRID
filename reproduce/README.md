@@ -30,7 +30,8 @@ A port or a change of GPL-2 code keeps its license, so these folders are kept ap
 | `astrid_repro/cai1_peers.py` | FISSA, TUnCaT and CNMF (CaImAn) on the recordings of D3's export, at the paper's settings (CNMF also at each setting of its cross-validation grid) |
 | `astrid_repro/suite2p_runner.py` | Suite2p's neuropil subtraction on given masks: whole videos (D2, D4, D5), cai-1 (D3) and exported cases |
 | `astrid_repro/cai1_export.py`, `cai1_rois/` | D3: the export every method read, built from the CRCNS download (the frames placed on the processed traces' grid, rigid registration, 4 × 4 binning, the scored frames, the spike-predicted calcium), with the ROI of each cell, drawn by hand once, blind to all methods |
-| `astrid_repro/stats.py` | the tables of D1 (ASTRID against seven methods), the ablations, D6 (its per-recording scoring and table) and D7 (by recording and by location) |
+| `astrid_repro/stats.py` | the tables of D1 (ASTRID against seven methods), the ablations, D6 (its per-recording scoring and table) and D7 (by recording and by location), D7's error split, the check of the units nested in mice |
+| `astrid_repro/runtime.py` | the runtime table (Supplementary Table S12), rebuilt from documented files of the per-unit times of the paper's runs; it measures nothing |
 | `astrid_repro/public_data.py`, `ring.py`, `cv.py`, `tables_public.py` | D2–D5: the readers of the public data and of their ground truth, the ring subtraction, the leave-one-out cross-validation over settings and detection thresholds, the tables |
 | `astrid_repro/figures/` | the data panels of the paper's figures, drawn from the outputs above: Figure 4 (`cai1.py`) and Supplementary Figure S6 (`public.py`, D2, D4 and D5), with the rules that chose their examples (section "Figures" below) |
 | `tuncat_peers/` (**GPL-2**) | FISSA, TUnCaT and CNMF on D2, D4 and D5 with the scripts of TUnCaT's paper-reproduction archive, staged with the paper's changes (CNMF at its published setting, one background component and AR(1), or at any setting of its cross-validation grid), and the record of those changes |
@@ -221,6 +222,9 @@ were left out of the input of every method.
    tables' records: `stats nesting --d1 <stats d1's folder> --d6 <d6.json> --d7 <d7.json> --out <tables>`
    (the mixed model needs statsmodels, the extra `nesting`; the paper's check took D6's `--baseline
    reported` record, and the equal scoring's gives the same per-mouse result).
+   The runtime table (Supplementary Table S12) is rebuilt from the times of the paper's runs, per dataset, unit and
+   method, with the same tests: `python -m astrid_repro.runtime --times <folder> --out <tables>` (the input files
+   are in its docstring). It does not time the methods.
 6. **Figures**: below.
 
 ## Running ASTRID as in the paper
