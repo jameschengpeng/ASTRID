@@ -68,7 +68,8 @@ res = astrid.from_caiman("cnm_results.hdf5", tau_r=0.045, tau_d=0.142)
 res = astrid.territory_from_aqua2(movie, rois, ["rec1_AQuA2.mat", "rec2_AQuA2.mat"],
                                   fps=30.9, um_per_px=2.0, tau_r=0.05, tau_d=0.4)
 
-# 5. one imaging location: two recordings fitted jointly, territory from AQuA2, evidence from a marker
+# 5. one imaging location: two recordings fitted jointly (an option: the paper fitted each recording separately,
+#    one call per recording), territory from AQuA2, evidence from a marker
 res = astrid.run_pipeline(["rec1.h5:mov", "rec2.h5:mov"], rois, fps=30.9, um_per_px=2.0,
                           tau_r=0.05, tau_d=0.4, aqua2_results=["rec1_AQuA2.mat", "rec2_AQuA2.mat"],
                           marker=[red_mean_1, red_mean_2], out="astrid_out")
@@ -91,7 +92,8 @@ out: astrid_out
 ## Inputs
 
 - **Movies.** (T, H, W), one recording or a list of recordings of the same field registered to one pixel
-  grid (fitted jointly, with footprints shared across recordings). In memory, or anything that slices along
+  grid (fitted jointly, with footprints shared across recordings; in the paper each recording was fitted
+  separately, and joint fitting is an option it did not use). In memory, or anything that slices along
   time (`h5py.Dataset`, `numpy.memmap`), or a path: `file.h5:dataset`, `file.npy`, `file.tif` (needs
   `tifffile`). Raw fluorescence, not ΔF/F: ASTRID computes each pixel's baseline itself. A MATLAB v7.3 file
   read through h5py comes out with MATLAB's axes reversed, (T, W, H) for an (H, W, T) movie: transpose its

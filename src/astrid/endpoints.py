@@ -4,7 +4,8 @@
 - ``from_caiman``: the ROIs (from the spatial footprints) and movie of a CaImAn run;
 - ``territory_from_aqua2``: a movie and ROI masks, with the astrocyte territory from AQuA2's results;
 - ``run_pipeline``: one imaging location as in the paper's Fig. 1A: its recordings, the ROI masks, AQuA2's
-  results (the territory) and optionally a structural marker (the evidence map), fitted jointly.
+  results (the territory) and optionally a structural marker (the evidence map). Several recordings are fitted
+  jointly, an option: in the paper each recording was fitted separately.
 
 Every keyword that ``demix`` takes (``tau_r``, ``tau_d``, ``settings``, ``border_px``, ``workers``,
 ``export_components``, ...) passes through.
@@ -98,7 +99,9 @@ def run_pipeline(movies: Any, rois: np.ndarray | None = None, *, fps: float, um_
                  **kwargs: Any) -> Result:
     """One imaging location, as in the paper's Fig. 1A.
 
-    - ``movies``: the location's recordings (one or a list), registered to one pixel grid, fitted jointly;
+    - ``movies``: the location's recordings (one or a list), registered to one pixel grid. Several recordings are
+      fitted jointly, each ROI's spatial footprints shared across them. In the paper each recording was fitted
+      separately (one call per recording); joint fitting is an option the paper did not use or evaluate;
     - ``rois``: the ROI masks (from any detection); None: detected here with the paper's detection
       (``detect_rois``, which then needs one AQuA2 result per movie for the astrocyte masks), whose candidates
       become ``candidates`` unless given;
