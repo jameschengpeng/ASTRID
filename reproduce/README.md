@@ -86,9 +86,18 @@ were left out of the input of every method.
    one background component is not deterministic either: CaImAn starts the background from scikit-learn's NMF
    with `init='nndsvda'`, whose randomized SVD is not seeded (with one component CaImAn starts from the mean, so
    the published setting reproduces bit for bit). Two runs at the settings chosen on D4 and D5 gave the same mean
-   F1 within 0.001 (0.8423 and 0.8425 on D4, 0.6825 and 0.6819 on D5), although single traces differ more:
-   - FISSA 1.0.0;
-   - TUnCaT, its paper's v1.0 scripts;
+   F1 within 0.001 (0.8423 and 0.8425 on D4, 0.6825 and 0.6819 on D5), although single traces differ more.
+   The methods:
+   - FISSA 1.0.0, at its defaults on D1, D6 and D7; on D2–D5 its alpha is chosen by the same cross-validation as
+     the other methods' settings, over its authors' grid for the dataset. On D4 the paper also ran alpha 0.0005,
+     below that grid, in a run of its own whose output folder `tables_public grids` reads as a second `--peers` root:
+
+     ```bash
+     python -m tuncat_peers --scripts <archive scripts> --data <archive> --dataset NAOMi --method fissa \
+         --fissa-alphas 0.0005 --out <peers2>
+     ```
+   - TUnCaT, its paper's v1.0 scripts, with floating alpha: alpha 1 on D1, D6 and D7; on D2–D5 chosen by the
+     cross-validation over its authors' grid for the dataset;
    - CNMF in CaImAn 1.13.2, seeded with the masks. On D2–D5 its settings are chosen by the same cross-validation
      as the other methods', over the number of background components (1, 2, 3) and the order of the
      autoregressive model (1, 2), ties going to the first in the order (1, 1), (1, 2), (2, 1), (2, 2), (3, 1),
@@ -107,9 +116,19 @@ were left out of the input of every method.
      CaImAn writes each memory-mapped movie to `$CAIMAN_TEMP` (else to `~/caiman_data/temp`), so both runners
      point it to a temporary folder that is deleted when the fit ends (for `tuncat_peers`, when the run ends:
      one video per run with `--smoke`);
-   - FISSA 1.0.0;
-   - TUnCaT, its paper's v1.0 scripts;
-   - Suite2p 1.1.0, its neuropil subtraction on the given masks;
+   - Suite2p 1.1.0, its neuropil subtraction on the given masks (`suite2p_runner.py`, in Suite2p's environment).
+     On D2, D4 and D5 it runs on each video with the released masks, into the folder that
+     `public_data.suite2p_path` reads, `<root>/<dataset>/<video>/suite2p/<video>.npz` (`<dataset>` ABO, NAOMi or
+     1p), and `tables_public` reads `--suite2p <root>`:
+
+     ```bash
+     python -I astrid_repro/suite2p_runner.py video --movie <archive>/data/NAOMi/<video>.h5:mov \
+         --masks "<archive>/data/NAOMi/GT Masks/FinalMasks_<video>.mat" --name <video> --threads 8 \
+         --out <root>/NAOMi/<video>/suite2p
+     ```
+
+     On D3 `suite2p_runner.py cai1` runs on the export's recordings, and on D1, D6 and D7 `suite2p_runner.py cases`
+     on each recording's exported cases;
    - the ring subtraction, `ring__<rec>` in ASTRID's output, or `ring.py` on the public data.
 
    TUnCaT and CNMF also ran with the astrocyte territory as extra components on D1, D6 and D7 ("+ terr.").
