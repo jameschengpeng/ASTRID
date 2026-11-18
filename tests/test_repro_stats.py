@@ -315,3 +315,16 @@ def test_commands(tmp_path: Path) -> None:
         d7_recording(tmp_path / "d7", f"loc1_data{k}", k + 1)
     assert stats.main(["d7", "--root", str(tmp_path / "d7"), "--out", str(out)]) == 0
     assert json.loads((out / "d7.json").read_text())["recordings"] == 3
+
+
+def test_error_split_parts_add_up() -> None:
+    rng = np.random.default_rng(5)
+    t = np.arange(600) / 20.0
+    q = np.sin(2 * np.pi * 0.1 * t) + 0.3 * np.sin(2 * np.pi * 0.03 * t)
+    y = 0.8 * q + 0.2 * np.sin(2 * np.pi * 0.2 * t) + rng.normal(0, 0.1, t.size)
+    s = stats.error_split(y, q, 20.0)
+    assert s["err05"] ** 2 == pytest.approx(s["gain_part"] + s["resid_part"], rel=1e-12)
+    assert s["err05"] == metrics.error(y, q, 20.0) and 0.7 < s["g05"] < 0.9
+    assert s["g_raw"] == pytest.approx(metrics.gain(y, q), rel=1e-12)
+    exact = stats.error_split(2 * q, q, 20.0)
+    assert exact["g05"] == pytest.approx(2.0) and exact["resid_part"] == pytest.approx(0.0, abs=1e-20)

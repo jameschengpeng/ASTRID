@@ -28,6 +28,9 @@ Commands (from ``reproduce/``: ``python -m astrid_repro.stats <command> --help``
   every trace as the method gives it, or ``equal`` (the paper's table), every trace but ASTRID's and the ring
   subtraction's minus its own running baseline under ASTRID's rule (``D6_EQUAL_BASELINE``).
 - ``d7``: D7's table from every recording's per-case scores, with D7's failure rule (``d7_tables``).
+- ``d7-split``: D7's error split (Supplementary Equation S24, ``d7_split_table``) from every recording's traces:
+  per case and method the gain and residual parts of the squared error below 0.5 Hz, and the x3 cases with a
+  gain below 0.5. Output: ``d7_split_cases.csv``, ``d7_split.json`` and ``.md``.
 """
 
 from __future__ import annotations
@@ -888,6 +891,114 @@ def d7_markdown(record: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+# ------------------------------------------------------------------------------------------ D7's error split
+
+SPLIT_METHODS = ("demix", "ring", "fissa", "tuncat", "tuncat_astro", "cnmf", "cnmf_astro", "suite2p")
+SPLIT_VALUES = ("err05", "gain_part", "resid_part", "g05", "g_raw", "dev05", "dev_raw")
+SPLIT_BAND_HZ = 0.5                    # the error's band
+LOW_GAIN = 0.5                         # x3 cases with a gain below this are counted
+
+
+def error_split(trace: np.ndarray, truth: np.ndarray, fps: float) -> dict[str, float]:
+    """Supplementary Equation S24 for one trace y and its added signal q, both low-passed below 0.5 Hz with their
+    means removed (the error's own signals): ``g05`` = y·q / q·q, the gain part (1 - g05)², and the residual part
+    |y - g05 q|² / |q|², whose sum is the squared error ``err05``; and ``g_raw``, the gain on the unfiltered
+    traces (D1's gain). Each trace in its own precision, as ``cases.injection_scores`` scores it."""
+    from astrid_repro.cases import ac, band
+
+    yb, qb = band(trace, SPLIT_BAND_HZ, fps), band(truth, SPLIT_BAND_HZ, fps)
+    g = float(yb @ qb / (qb @ qb))
+    r = yb - g * qb
+    return {"g05": g, "gain_part": (1 - g) ** 2, "resid_part": float(r @ r / (qb @ qb)),
+            "err05": float(np.linalg.norm(yb - qb) / np.linalg.norm(qb)),
+            "g_raw": float(ac(trace) @ ac(truth) / (ac(truth) @ ac(truth)))}
+
+
+def d7_error_split(run: Path, results: list[Path] | None = None) -> pd.DataFrame:
+    """One recording's error split (``error_split``), one row per injected case and method of
+    ``SPLIT_METHODS``, with D7's failure rule (``d7_injection_table``): a failed method takes the raw ROI
+    average's values (``failed`` True). ``g_raw_as_is`` and ``g05_as_is`` are the method's own gains whatever
+    its status (NaN without a trace), from which the gains below ``LOW_GAIN`` are counted; ``dev_raw`` and
+    ``dev05`` are |g - 1|. Inputs: a D7 run folder (``astrid_repro.d7``: ``run.json``, ``compare/``,
+    ``injection/``, ``scores/``) and the folders of the peers' results (default ``<run>/compare/results``)."""
+    from astrid_repro.cases import case_traces
+
+    fps = float(json.loads((run / "run.json").read_text(encoding="utf-8"))["fps"])
+    index = json.loads((run / "compare" / "index.json").read_text(encoding="utf-8"))
+    status = d7_injection_table(run, index)
+    folders = results if results is not None else [run / "compare" / "results"]
+    rows = []
+    for c in [c for c in index if c["test"] == "injection"]:
+        tr = case_traces(run / "injection", folders, c["spec"])
+        truth = np.load(run / "compare" / f"{c['spec']}.npz")["truth"]
+        vals = {m: error_split(tr[m], truth, fps) for m in (*SPLIT_METHODS, *REFERENCE) if m in tr}
+        st = status[status.case == c["spec"]].set_index("method").status
+        for m in SPLIT_METHODS:
+            ok = st[m] == "ok"
+            own = vals.get(m, {"g_raw": float("nan"), "g05": float("nan")})
+            rows.append({"case": c["spec"], "scale": c["scale"], "method": m, "failed": not ok,
+                         **(vals[m] if ok else vals[REFERENCE[0]]),
+                         "g_raw_as_is": own["g_raw"], "g05_as_is": own["g05"]})
+    t = pd.DataFrame(rows)
+    t["dev_raw"] = (t.g_raw - 1).abs()
+    t["dev05"] = (t.g05 - 1).abs()
+    return t
+
+
+def d7_split_table(root: Path, results: list[str] | None = None) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """The error split over D7's recordings (``d7_tables``' folders under ``root``; ``results``: the peers'
+    results folders, relative to each recording's folder, default ``compare/results``): the per-case rows
+    (with ``location`` and ``recording``) and the record. Per recording, the median of each value of
+    ``SPLIT_VALUES`` over its cases at each strength; then per method and strength the mean ± SD over the
+    recordings (so the parts need not add up to the squared error) and the mean of each imaging location; and
+    the x3 cases whose gain, raw or below 0.5 Hz, is below ``LOW_GAIN`` (the traces as they are). Descriptive,
+    without tests."""
+    runs = sorted(p.parent.parent for p in root.glob("*/scores/summary.txt"))
+    if not runs:
+        raise SystemExit(f"no scored recording under {root}")
+    parts = []
+    for run in runs:
+        location, k = run.name.rsplit("_", 1)
+        folders = [run / r for r in (results or ["compare/results"])]
+        parts.append(d7_error_split(run, folders).assign(location=location, recording=f"{location}/{k}"))
+    t = pd.concat(parts, ignore_index=True)
+    rec = t.groupby(["recording", "location", "method", "scale"])[list(SPLIT_VALUES)].median().reset_index()
+    record: dict[str, Any] = {"recordings": len(runs), "by_strength": {}, "by_location": {}}
+    for scale, g in rec.groupby("scale"):
+        key = f"x{scale:g}"
+        record["by_strength"][key] = {m: {v: {"mean": float(g[g.method == m][v].mean()),
+                                              "sd": float(g[g.method == m][v].std(ddof=1))}
+                                          for v in SPLIT_VALUES} for m in SPLIT_METHODS}
+        record["by_location"][key] = {loc: {m: {v: float(h[h.method == m][v].mean()) for v in SPLIT_VALUES}
+                                            for m in SPLIT_METHODS} for loc, h in g.groupby("location")}
+    x3 = t[t.scale == 3]
+    record["low_gain_x3"] = {"cases": int((x3.method == OURS).sum()),
+                             "raw": {m: int((x3[x3.method == m].g_raw_as_is < LOW_GAIN).sum()) for m in SPLIT_METHODS},
+                             "g05": {m: int((x3[x3.method == m].g05_as_is < LOW_GAIN).sum()) for m in SPLIT_METHODS}}
+    return t, record
+
+
+def d7_split_markdown(record: dict[str, Any]) -> str:
+    lines = ["# D7: the error split (descriptive)", "",
+             "Per injected case: y and q, the trace and the added signal below 0.5 Hz with their means removed; "
+             "g = y·q / q·q; error² = (1 - g)² + |y - g q|² / |q|². Each recording's median over its cases, then "
+             f"mean ± SD over the {record['recordings']} recordings. A failed trace takes the raw ROI's values.", ""]
+    for key, block in record["by_strength"].items():
+        lines += [f"**{key}**", "", "| method | error | gain part | residual part | g (0.5 Hz) | g (raw) | "
+                  "mean abs(g - 1) (raw) |", "|---|---|---|---|---|---|---|"]
+        for m in SPLIT_METHODS:
+            b = block[m]
+            cells = [f"{b[v]['mean']:.3f} ± {b[v]['sd']:.3f}" for v in ("err05", "gain_part", "resid_part", "g05",
+                                                                        "g_raw")]
+            lines.append(f"| {NAMES[m]} | " + " | ".join(cells) + f" | {b['dev_raw']['mean']:.3f} |")
+        lines.append("")
+    low = record["low_gain_x3"]
+    lines += [f"x3 cases with a gain below {LOW_GAIN} (of {low['cases']}; the traces as they are): raw gain "
+              + ", ".join(f"{NAMES[m]} {low['raw'][m]}" for m in SPLIT_METHODS) + "; 0.5-Hz gain "
+              + ", ".join(f"{NAMES[m]} {low['g05'][m]}" for m in SPLIT_METHODS) + ".", ""]
+    return "\n".join(lines)
+
+
 # ----------------------------------------------------------------------------------------------------- CLI
 
 def main(argv: list[str] | None = None) -> int:
@@ -920,6 +1031,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--root", type=Path, required=True, help="the recordings' folders (see d7_tables)")
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--name", default="d7")
+    p = sub.add_parser("d7-split", help="D7's error split (Supplementary Equation S24)")
+    p.add_argument("--root", type=Path, required=True, help="the recordings' folders (see d7_tables)")
+    p.add_argument("--results", nargs="+", default=None,
+                   help="the peers' results folders, relative to each recording's folder (default compare/results)")
+    p.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")         # the tables' ± and − on a Windows console
@@ -959,6 +1075,13 @@ def main(argv: list[str] | None = None) -> int:
         write_json(a.out / f"{a.name}.json", record)
         text = d6_markdown(record, a.name)
         (a.out / f"{a.name}.md").write_text(text, encoding="utf-8")
+    elif a.command == "d7-split":
+        cases, record = d7_split_table(a.root, a.results)
+        a.out.mkdir(parents=True, exist_ok=True)
+        cases.to_csv(a.out / "d7_split_cases.csv", index=False)
+        write_json(a.out / "d7_split.json", record)
+        text = d7_split_markdown(record)
+        (a.out / "d7_split.md").write_text(text, encoding="utf-8")
     else:
         record = d7_tables(a.root)
         write_json(a.out / f"{a.name}.json", record)

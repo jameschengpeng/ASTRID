@@ -201,3 +201,11 @@ def test_one_recording(tmp_path: Path) -> None:
     truth = np.load(run / "compare" / f"{index[0]['spec']}.npz")["truth"]
     roi = np.load(results / f"{index[0]['spec']}.npz")["tuncat_raw_roi"]
     assert first.err_05hz == metrics.error(roi, truth, 22.7)               # scored at the location's rate
+    split = stats.d7_error_split(run, [results])                          # Supplementary Equation S24
+    assert len(split) == len(stats.SPLIT_METHODS) * sum(c["test"] == "injection" for c in index)
+    np.testing.assert_allclose(split.err05 ** 2, split.gain_part + split.resid_part, rtol=1e-12)
+    own = split[(split.case == index[0]["spec"]) & (split.method == "demix")].iloc[0]
+    ours = scores[(scores.case == index[0]["spec"]) & (scores.method == "demix")].iloc[0]
+    assert not own.failed and own.err05 == ours.err_05hz and own.g_raw == ours.gain
+    fissa = split[(split.case == index[0]["spec"]) & (split.method == "fissa")].iloc[0]
+    assert fissa.failed and fissa.err05 == first.err_05hz and np.isnan(fissa.g_raw_as_is)   # the raw ROI's

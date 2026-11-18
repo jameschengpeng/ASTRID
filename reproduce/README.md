@@ -173,7 +173,9 @@ were left out of the input of every method.
      <run>/compare` into a root of their own, pooled with `d1 pool`; then `stats ablations --full <scores>
      --variant I=<scores I> II=<scores II> III=<scores III> --out <tables>` (Supplementary Table S10). D7 runs
      the same with `astrid_repro.d7` (`--location D7_location1` or `D7_location2`), without `pool`:
-     `stats d7 --root <root> --out <tables>` (Supplementary Tables S8 and S9).
+     `stats d7 --root <root> --out <tables>` (Supplementary Tables S8 and S9), and the error split of
+     Supplementary Equation S24 with `stats d7-split --root <root> --results compare/results <Suite2p's> --out
+     <tables>` (its Supplementary Section 5.3 values).
    - **D6:** the leakage of the real astrocyte channel. `d6 run` makes the one-color movie M (both channels)
      and the neuronal movie R from the two channels, fits and exports the cases on each (`<run>/M`, `<run>/R`),
      and the peers run on both exports. The scores are the leakage from M against R, below 5 Hz and below
