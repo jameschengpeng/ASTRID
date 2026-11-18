@@ -13,8 +13,7 @@ a stopped run resumes.
 - D2, D4, D5: TUnCaT's archive layout, ``<data>/data/<ds>/<video>.h5`` (``mov``) and
   ``<data>/data/<ds>/GT Masks/FinalMasks_<video>.mat``; D2's movies are the Allen crops of ``abo_crop``.
 - D3: the export of ``cai1_export`` (``index.json``, ``<recording>.h5`` with ``mov`` and the binned ``roi``).
-D1, D6 and D7 need the authors' recordings, available from the corresponding author, Axel Nimmerjahn, on
-reasonable request.
+D1, D6 and D7 need the authors' recordings, which are available from Axel Nimmerjahn on reasonable request.
 
     python -m astrid_repro.run D2 --data <archive> --out <results> [--workers 8] [--videos ...] [--settings ...]
     python -m astrid_repro.run D3 --data <export> --out <results> ...
