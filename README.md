@@ -247,7 +247,7 @@ the code that draws the data panels of its figures.
   injection and leakage tests (D1, D7) or make the two movies of the two-color test (D6), fit and export the cases
   for the peer methods, and score them; `stats.py` makes the tables. D6's table in the paper scores every peer
   trace after its own running baseline is removed (`stats d6 --baseline equal`). Their figures are not part of this
-  code yet.
+  code.
 
 ## License
 
