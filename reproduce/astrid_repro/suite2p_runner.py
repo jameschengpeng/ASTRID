@@ -21,8 +21,9 @@ shared by ROIs is used for each and no given ROI is left without pixels:
 - ``cases``: one recording's exported cases (``--cases``: the folder of ``astrid_repro.peers``' case format),
   each case's movie built by ``peers.case_movie``, with the target and the neighbouring cells as plain TUnCaT
   and CNMF get them. A case on which Suite2p's own steps raise (``Suite2pError``) gets no results file, so it
-  is scored as a failure, and is listed with its error under ``failed`` in the provenance. (Seen on D7: a
-  compact ROI of 11-13 px with no neighbour makes Suite2p 1.1.0's percentile filter fail.)
+  is scored as a failure, and is listed with its error under ``failed`` in the provenance. Such a case can
+  occur with a compact ROI of about 11-13 px and no neighbouring cell: Suite2p 1.1.0's soma crop then leaves the
+  ROI a radius of 0, and its percentile filter fails.
 
 **Outputs** in ``--out``, per video (``video``, ``cai1``) or per recording (``cases``, named after the cases
 folder's parent):
