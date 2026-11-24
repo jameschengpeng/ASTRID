@@ -4,12 +4,13 @@ per-case scores. ``astrid_repro.d1`` and ``astrid_repro.d7`` read each dataset's
 (``run_tests``); ``astrid_repro.d6`` fits and exports D6's real ROIs, with nothing added, with the same patch, fit
 and export.
 
-D1 and D7 have no ground truth, so known signals are added to the real movie of one recording:
+D1 and D7 have no ground truth, so known signals are added to the real movie of one recording, each at six
+amplitudes, 0.5, 1, 2, 3, 4 and 5 times the recorded one (``SCALES``):
 - **the injection test** copies the spatial footprint and ΔF/F0 of a real ROI (a source) to free sites inside and
-  away from astrocyte territory, at x1 and x3; the copy's ROI average is the truth;
+  away from astrocyte territory; the copy's ROI average is the truth;
 - **the leakage test** places an astrocyte (on D1 the location's largest astrocyte ROI, on D7 the recording's
-  largest AQuA2 event), with its ΔF/F0, over real ROIs near territory, at x0, x1 and x3; the change of an ROI's
-  trace from x0 is the leakage.
+  largest AQuA2 event), with its ΔF/F0, over real ROIs near territory, also without its signal (x0, the
+  reference fit; ``LEAK_SCALES``); the change of an ROI's trace from x0 is the leakage.
 
 **The territory** (``Location``) is the pixels touched by at least ``territory_min_events`` AQuA2 events: on D1
 2 over all recordings of the imaging location, on D7 1 of the recording's own.
@@ -31,7 +32,7 @@ means over them.
   and candidate pixel, and ``SITE_INSET_PX`` inside the field.
 - ``injection``: the source's ROI and footprint moved so that the ROI's centroid lies on the site (rounded to
   whole pixels), carrying the source's ΔF/F0 times the scale. ``injection_cases``: the sources serve the sites
-  in turn, the territory sites first, and x1 and x3 at a site share a source.
+  in turn, the territory sites first, and the six amplitudes at a site share a source.
 - ``astro_injection``: the astrocyte ROI moved so that its centroid lies ``PLACEMENT_OFFSETS_PX`` from the
   target's centroid in one of 8 directions: at the first of these distances at which some direction covers at
   least ``MIN_COVER`` of the ROI, the direction whose moved astrocyte lies most in territory (the first on
@@ -78,11 +79,25 @@ scored (``score_run``) into one folder, the layout of ``astrid_repro.d1`` (its d
 recording's frame rate, with the means removed from every trace:
 - injection, per case and method: ``corr`` (Pearson), ``gain`` (the slope of the trace on the truth) and the
   errors ||y - q|| / ||q|| unfiltered, below 2 Hz and below 0.5 Hz (``err_raw``, ``err_2hz``, ``err_05hz``);
+  and, on every row of a case, its signal-to-background ratio ``sbr`` = ||C L q|| / ||C L (r - q)||, with r the
+  raw ROI average, C the mean removal and L the low-pass below 0.5 Hz (computed as 1 / the raw ROI's
+  ``err_05hz`` as the trace is, the same by linearity);
 - leakage, per target, scale (> 0) and method: ``leak`` and ``leak_05hz`` (||y+ - y0|| / ||q||, unfiltered and
-  below 0.5 Hz) and ``kept_corr`` (the correlation of y+ and y0).
+  below 0.5 Hz) and ``kept_corr`` (the correlation of y+ and y0); and, on every row of a case, its
+  astrocyte-to-ROI ratio ``arr`` = ||C q|| / ||C r0||, with r0 the raw ROI average of the x0 case.
 Every trace is scored in its own precision, as the paper's scores were: a float32 trace (TUnCaT's raw ROI
 average) has its mean removed in float32 before the norms, so its unfiltered error, gain and leakage differ from
 ``metrics.py``'s float64 ones in the last digits; the low-pass works in float64.
+
+**The injection test's baseline** (``BASELINES``; the paper's tables use ``without_added``). ASTRID's trace and
+the ring subtraction's are F - F0, with F0 each pixel's baseline taken from the movie before the signal was added
+(``AS_IS``). ``reported`` scores every other trace as the method gives it, with only its mean removed.
+``without_added`` removes from every other usable trace (``metrics.usable``) a running baseline by ASTRID's rule,
+the recording's own (``astrid.patch.baseline`` with the run's ``baseline_rule``: on D1 the 10th percentile of
+1-s means in a moving 60-s window, on D7 the bleaching line), taken from the trace without the added signal:
+from r - q for the raw ROI average r, which holds q unchanged, and from y - g q for any other trace y, g its gain
+on q (an approximation of its trace without the added signal). ``sbr`` is the same in both. The leakage needs no
+such step (the difference of two runs of one method, with the same F0 in both) and is the same in both.
 """
 
 from __future__ import annotations
@@ -118,6 +133,7 @@ from astrid.patch import (
     RING_INNER,
     RING_OUTER,
     UNCLASSIFIED_MIN_PX,
+    BaselineRule,
     Built,
     Field,
     PixelData,
@@ -128,8 +144,9 @@ from astrid.patch import (
     scaled,
     scaled_area,
 )
+from astrid.patch import baseline as running_baseline
 from astrid.solver import fit
-from astrid_repro.metrics import lowpass_fourier
+from astrid_repro.metrics import lowpass_fourier, usable
 
 TERRITORY_MIN_EVENTS = 2            # D1's territory: pixels touched by at least 2 AQuA2 events
 TARGET_MIN_PX = 10                  # leakage targets
@@ -148,8 +165,8 @@ SITE_GAP_PX = 15.0
 SITE_CLEARANCE_PX = 4.0
 SITE_INSET_PX = 15
 SITE_SEED = 0
-SCALES = (1.0, 3.0)                 # injection test
-LEAK_SCALES = (0.0, 1.0, 3.0)       # leakage test
+SCALES = (0.5, 1.0, 2.0, 3.0, 4.0, 5.0)     # the six amplitudes of both tests
+LEAK_SCALES = (0.0, *SCALES)                # the leakage test, with its reference fit without the astrocyte
 PLACEMENT_OFFSETS_PX = (5.0, 2.5, 7.5, 0.0, 10.0, 12.5)
 MIN_COVER = 0.5
 EVIDENCE_FLOOR = 0.8                # the evidence over an added astrocyte's mask
@@ -159,6 +176,9 @@ METHODS = ("demix", "ring", "fissa", "tuncat", "tuncat_astro", "cnmf", "cnmf_ast
 PEER_KEYS = {"fissa": "fissa", "tuncat": "tuncat", "tuncat_astro": "tuncat_astro", "cnmf": "cnmf",
              "cnmf_astro": "cnmf_astro", "roi": "tuncat_raw_roi", "suite2p": "suite2p"}
 BANDS = {"raw": None, "2hz": 2.0, "05hz": 0.5}
+BASELINES = ("reported", "without_added")   # the injection test's scorings (module docstring)
+SCORE_DIRS = {"reported": "scores", "without_added": "scores_without_added"}
+AS_IS = ("demix", "ring")                   # F - F0 already, the same in every scoring
 
 
 @dataclass(frozen=True)
@@ -463,8 +483,8 @@ def injection_cases(loc: Location, dff: Mapping[str, np.ndarray],
 def leakage_cases(loc: Location, dff: Mapping[str, np.ndarray], astro_dff: Mapping[str, np.ndarray],
                   source: int, rules: Rules = D1_RULES) -> tuple[list[Case], dict[str, Any]]:
     """The leakage test's cases of one recording: astrocyte ``source`` (a label of ``Location.astro_label``;
-    ``astro_dff``: recording -> its ΔF/F0) over each target at x0, x1 and x3; and the choices: the targets and
-    the astrocyte's shifts."""
+    ``astro_dff``: recording -> its ΔF/F0) over each target at each of ``LEAK_SCALES``; and the choices: the
+    targets and the astrocyte's shifts."""
     targets = leakage_targets(loc, dff, LEAK_TARGETS, rules.target_min_px)
     cases, shifts = [], {}
     for v in targets:
@@ -801,11 +821,22 @@ def run_tests(loc: Location, movie: Movie, built: Mapping[str, list[Case]], sett
     return run
 
 
+def run_baseline_rule(info: Mapping[str, Any]) -> BaselineRule:
+    """The baseline rule of a run's ASTRID fits (its ``run.json``: the injection test's settings), with which the
+    ``without_added`` scoring takes the other traces' baselines."""
+    settings = (info.get("settings") or {}).get("injection")
+    return astrid.Settings.from_dict(settings).baseline_rule() if settings else BaselineRule()
+
+
 def score_run(run: str | Path, cases_dir: str | Path | None = None, results: Sequence[str | Path] | None = None,
-              log: Callable[[str], Any] = say) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Score a run folder (``run_tests``) into ``<run>/scores``: ASTRID and the ring subtraction from its
-    outputs, every peer method whose results are in ``results`` (default ``<cases>/results``), against the
-    cases in ``cases_dir`` (default ``<run>/compare``), at the recording's frame rate."""
+              log: Callable[[str], Any] = say, baseline: str = "reported") -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Score a run folder (``run_tests``) into ``<run>/scores`` (``baseline`` "reported") or
+    ``<run>/scores_without_added`` (``SCORE_DIRS``): ASTRID and the ring subtraction from its outputs, every peer
+    method whose results are in ``results`` (default ``<cases>/results``), against the cases in ``cases_dir``
+    (default ``<run>/compare``), at the recording's frame rate; the injection test under ``baseline`` (module
+    docstring), with the run's own baseline rule."""
+    if baseline not in BASELINES:
+        raise ValueError(f"baseline must be one of {BASELINES}, got {baseline!r}")
     run = Path(run)
     info = json.loads((run / "run.json").read_text(encoding="utf-8"))
     cases = Path(cases_dir) if cases_dir is not None else run / "compare"
@@ -813,11 +844,11 @@ def score_run(run: str | Path, cases_dir: str | Path | None = None, results: Seq
     index = json.loads((cases / "index.json").read_text())
     fps = float(info["fps"])
     tests = info["tests"]
-    inj = (injection_scores(cases, run / "injection", index, fps, folders) if "injection" in tests
-           else pd.DataFrame())
+    inj = (injection_scores(cases, run / "injection", index, fps, folders, baseline, run_baseline_rule(info))
+           if "injection" in tests else pd.DataFrame())
     leak = (leakage_scores(cases, run / "leakage", index, fps, folders) if "leakage" in tests
             else pd.DataFrame())
-    scores = run / "scores"
+    scores = run / SCORE_DIRS[baseline]
     scores.mkdir(parents=True, exist_ok=True)
     for name, t in (("injection_scores.csv", inj), ("leakage_scores.csv", leak)):
         if not t.empty:
@@ -855,22 +886,49 @@ def case_traces(fits: Path, results: Sequence[Path], case: str) -> dict[str, np.
     return {m: out[m] for m in METHODS if m in out}
 
 
+def error(x: np.ndarray, truth: np.ndarray, f: float | None, fps: float) -> float:
+    """||y - q|| / ||q|| of the means-removed trace and truth, low-passed below ``f`` Hz (None: unfiltered)."""
+    return float(np.linalg.norm(band(x, f, fps) - band(truth, f, fps)) / np.linalg.norm(band(truth, f, fps)))
+
+
+def without_added(tr: Mapping[str, np.ndarray], q: np.ndarray, fps: float,
+                  rule: BaselineRule | None) -> dict[str, np.ndarray]:
+    """The injection test's traces under the ``without_added`` scoring (module docstring): every usable trace but
+    ASTRID's and the ring subtraction's minus its running baseline under ``rule``, taken from the raw ROI average
+    minus the truth ``q`` or from any other trace minus its gain times ``q``."""
+    out: dict[str, np.ndarray] = {}
+    for m, x in tr.items():
+        if m in AS_IS or not usable(x):
+            out[m] = x
+            continue
+        y = np.asarray(x, dtype=np.float64)
+        src = y - q if m == "roi" else y - float(ac(x) @ ac(q) / (ac(q) @ ac(q))) * q
+        out[m] = y - running_baseline(src[None], fps, rule)[0]
+    return out
+
+
 def injection_scores(cases: Path, fits: Path, index: Sequence[Mapping[str, Any]], fps: float,
-                     results: Sequence[Path] = ()) -> pd.DataFrame:
-    """One row per injected case and method (module docstring); empty without injected cases. ``cases``: the
-    export (the truths), ``fits``: ASTRID's outputs of the injection test."""
+                     results: Sequence[Path] = (), baseline: str = "reported",
+                     rule: BaselineRule | None = None) -> pd.DataFrame:
+    """One row per injected case and method (module docstring), under ``baseline`` (``rule``: the recording's
+    baseline rule, default ASTRID's default); empty without injected cases. ``cases``: the export (the truths),
+    ``fits``: ASTRID's outputs of the injection test. ``sbr`` is NaN where there is no raw ROI average."""
+    if baseline not in BASELINES:
+        raise ValueError(f"baseline must be one of {BASELINES}, got {baseline!r}")
     rows = []
     for c in [c for c in index if c["test"] == "injection"]:
         tr = case_traces(fits, results, c["spec"])
         truth = np.load(cases / f"{c['spec']}.npz")["truth"]
+        sbr = 1.0 / error(tr["roi"], truth, 0.5, fps) if "roi" in tr else float("nan")
+        if baseline == "without_added":
+            tr = without_added(tr, truth, fps, rule)
         for m, x in tr.items():
             row = {"case": c["spec"], "site": c["site"], "scale": c["scale"], "method": m,
                    "corr": float(np.corrcoef(x, truth)[0, 1]),
                    "gain": float(ac(x) @ ac(truth) / (ac(truth) @ ac(truth)))}
             for b, f in BANDS.items():
-                row[f"err_{b}"] = float(np.linalg.norm(band(x, f, fps) - band(truth, f, fps))
-                                        / np.linalg.norm(band(truth, f, fps)))
-            rows.append(row)
+                row[f"err_{b}"] = error(x, truth, f, fps)
+            rows.append(row | {"sbr": sbr})
     return pd.DataFrame(rows)
 
 
@@ -878,19 +936,20 @@ def leakage_scores(cases: Path, fits: Path, index: Sequence[Mapping[str, Any]], 
                    results: Sequence[Path] = ()) -> pd.DataFrame:
     """One row per leakage target, scale (> 0) and method present at that scale and at x0 (module
     docstring). ``cases``: the export (the astrocyte averages), ``fits``: ASTRID's outputs of the leakage
-    test."""
+    test. ``arr`` is NaN where there is no raw ROI average."""
     rows = []
     for c in [c for c in index if c["test"] == "leakage" and c["scale"] > 0]:
         tr = case_traces(fits, results, c["spec"])
         tr0 = case_traces(fits, results, f"{c['base']}-astro-x0")
         a = np.load(cases / f"{c['spec']}.npz")["astro_roi"]
+        arr = float(np.linalg.norm(ac(a)) / np.linalg.norm(ac(tr0["roi"]))) if "roi" in tr0 else float("nan")
         for m in [m for m in METHODS if m in tr and m in tr0]:
             d = tr[m] - tr0[m]
             leak_05hz = np.linalg.norm(band(d, 0.5, fps)) / np.linalg.norm(band(a, 0.5, fps))
             rows.append({"target": c["base"], "scale": c["scale"], "method": m,
                          "leak": float(np.linalg.norm(ac(d)) / np.linalg.norm(ac(a))),
                          "leak_05hz": float(leak_05hz),
-                         "kept_corr": float(np.corrcoef(tr[m], tr0[m])[0, 1])})
+                         "kept_corr": float(np.corrcoef(tr[m], tr0[m])[0, 1]), "arr": arr})
     return pd.DataFrame(rows)
 
 

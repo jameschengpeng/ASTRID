@@ -10,30 +10,42 @@ ROI average is a reference row without a test. Methods are named as in the score
 ``tuncat``, ``tuncat_astro`` (TUnCaT + terr.), ``fissa``, ``cnmf``, ``cnmf_astro`` (CNMF + terr.), ``ring``,
 ``suite2p`` and ``roi`` (the raw ROI average).
 
+**D1 and D7** add their signals at six amplitudes (``LEVELS``, ``cases.SCALES``). A unit's score at a level is its
+median over its cases at that level; the primary test of a measure is over its curve, each unit's mean of its six
+level scores, against the seven comparators (Holm over the seven), and each level is tested the same way (Holm over
+the seven within the level). Each level also carries its difficulty ratio, the median and quartiles over its cases
+of the signal-to-background ratio (``sbr``, injection) or the astrocyte-to-ROI ratio (``arr``, leakage). The
+measures (``grid_dataset``): primary, the error below 0.5 Hz (``err_05hz``) and the leakage (``leak``);
+secondary, the gain's distance from 1 (``|gain - 1|``, "gain deviation"), the kept correlation (higher is better)
+and the error at astrocyte and at control sites; and per level the cases with a gain below ``LOW_GAIN``.
+
 Commands (from ``reproduce/``: ``python -m astrid_repro.stats <command> --help``):
-- ``d1``: D1's injection and leakage tests (``d1``). Input: the per-case scores pooled over D1's recordings,
+- ``d1``: D1's injection and leakage tests (``d1``). Input: the per-case scores pooled over D1's recordings
+  (``d1 pool``, of one scoring: the paper's tables use ``--baseline without_added``),
   ``injection_scores[_<suffix>].csv`` (``location``, ``recording``, ``case``, ``site``, ``scale``, ``method``,
-  ``err_05hz``, ``gain``, ...) and ``leakage_scores[_<suffix>].csv`` (``location``, ``recording``,
-  ``target``, ``scale``, ``method``, ``leak``, ``kept_corr``, ...), every method's rows. A location's name
-  starts with its mouse's, before the first underscore. Output: ``d1_stats.json`` (the four primary columns,
-  the six comparisons before Suite2p, every p Holm-corrected over the seven with Suite2p, ``p_holm``, and
-  over the six, ``p_holm_declared``), ``d1_suite2p.json`` (ASTRID against Suite2p on the primary and
-  secondary measures), ``d1_secondary.json`` (the secondary measures' families of seven) and ``d1_stats.md``.
+  ``err_05hz``, ``gain``, ``sbr``, ...) and ``leakage_scores[_<suffix>].csv`` (``location``, ``recording``,
+  ``target``, ``scale``, ``method``, ``leak``, ``kept_corr``, ``arr``, ...), every method's rows. A location's
+  name starts with its mouse's, before the first underscore. Output: ``d1.json`` (``primary`` and ``secondary``,
+  every column per level and per curve) and ``d1.md``.
 - ``ablations``: D1's ablations (``ablations``), full ASTRID against variants I, II and III, each from its own
-  pooled scores (ASTRID's rows only; every variant must have exactly the full model's cases). Output:
-  ``ablation_stats.json`` and ``.md``.
+  pooled scores (ASTRID's rows only; every variant must have exactly the full model's cases): the error and the
+  leakage per level and per curve, the secondary measures per level, Holm over the three variants of each column.
+  Output: ``ablation_stats.json`` and ``.md``.
 - ``d6-scores``: D6's per-case scores of one recording from the traces (``d6_scores``) and the kept transient
   size of each case (``d6_sizes``); ``d6``: D6's table from every recording's scores (``d6_tables``), with the
   kept transient size (``d6_size_table``) where every recording has it. Both take ``--baseline``: ``reported``,
   every trace as the method gives it, or ``equal`` (the paper's table), every trace but ASTRID's and the ring
   subtraction's minus its own running baseline under ASTRID's rule (``D6_EQUAL_BASELINE``).
-- ``d7``: D7's table from every recording's per-case scores, with D7's failure rule (``d7_tables``).
+- ``d7``: D7's tests from every recording's per-case scores of one scoring (``--baseline``; the paper's tables
+  use ``without_added``), with D7's failure rule (``d7_tables``), as D1's, the recording being the unit, with the
+  imaging locations apart and the failures. Output: ``d7.json`` and ``d7.md``.
 - ``d7-split``: D7's error split (Supplementary Equation S24, ``d7_split_table``) from every recording's traces:
   per case and method the gain and residual parts of the squared error below 0.5 Hz, and the x3 cases with a
   gain below 0.5. Output: ``d7_split_cases.csv``, ``d7_split.json`` and ``.md``.
 - ``nesting``: the tests' units nested in mice (Supplementary Table S5, ``nesting``) from the records of ``d1``,
-  ``d6`` and ``d7``: per mouse on every dataset; on D1 also a mixed model (statsmodels, the extra ``nesting``) and
-  a hierarchical bootstrap. Output: ``nesting.json`` and ``.md``.
+  ``d6`` and ``d7`` (D1's and D7's error and leakage curves, D6's primary column): per mouse on every dataset; on
+  D1 also a mixed model (statsmodels, the extra ``nesting``) and a hierarchical bootstrap. Output:
+  ``nesting.json`` and ``.md``.
 """
 
 from __future__ import annotations
@@ -49,6 +61,7 @@ import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks
 
+from astrid_repro.cases import BASELINES, SCORE_DIRS
 from astrid_repro.metrics import holm, leakage, lowpass_fourier, usable, wilcoxon_p
 from astrid_repro.public_data import minus_baseline
 
@@ -56,22 +69,10 @@ OURS = "demix"                         # ASTRID's rows in the score tables
 REFERENCE = ("roi",)                   # the raw ROI average: a reference row, no test
 NAMES = {"demix": "ASTRID", "tuncat": "TUnCaT", "tuncat_astro": "TUnCaT + terr.", "fissa": "FISSA",
          "cnmf": "CNMF", "cnmf_astro": "CNMF + terr.", "ring": "Ring", "suite2p": "Suite2p", "roi": "raw ROI"}
-# D1's primary columns, also D7's: (name, table, score, strength)
-COLUMNS = (("error x1", "injection", "err_05hz", 1.0), ("error x3", "injection", "err_05hz", 3.0),
-           ("leakage x1", "leakage", "leak", 1.0), ("leakage x3", "leakage", "leak", 3.0))
-# D1's primary and secondary columns: (name, table, score, strength, site (None: all), better, primary)
-D1_MEASURES: tuple[tuple[str, str, str, float, str | None, str, bool], ...] = (
-    ("error x1", "injection", "err_05hz", 1.0, None, "lower", True),
-    ("error x3", "injection", "err_05hz", 3.0, None, "lower", True),
-    ("leakage x1", "leakage", "leak", 1.0, None, "lower", True),
-    ("leakage x3", "leakage", "leak", 3.0, None, "lower", True),
-    ("gain deviation x1", "injection", "gain_dev", 1.0, None, "lower", False),          # |gain - 1|
-    ("gain deviation x3", "injection", "gain_dev", 3.0, None, "lower", False),
-    ("kept correlation x1", "leakage", "kept_corr", 1.0, None, "higher", False),
-    ("kept correlation x3", "leakage", "kept_corr", 3.0, None, "higher", False),
-    ("error x1, astrocyte sites", "injection", "err_05hz", 1.0, "astro", "lower", False),
-    ("error x1, control sites", "injection", "err_05hz", 1.0, "control", "lower", False),
-)
+COMPARED = ("tuncat", "tuncat_astro", "fissa", "cnmf", "cnmf_astro", "ring", "suite2p")   # Holm over these
+METHODS = (OURS, *COMPARED, *REFERENCE)
+LEVELS = (0.5, 1.0, 2.0, 3.0, 4.0, 5.0)   # the six amplitudes of D1's and D7's tests (cases.SCALES)
+LOW_GAIN = 0.5                         # cases with a gain below this are counted
 
 
 def fmt_p(p: float) -> str:
@@ -99,167 +100,7 @@ def write_json(path: Path, record: Any) -> None:
     path.write_text(json.dumps(record, indent=1), encoding="utf-8")
 
 
-# ----------------------------------------------------------------------------------------------------- D1
-
-D1_DECLARED = ("tuncat", "tuncat_astro", "fissa", "cnmf", "cnmf_astro", "ring")   # the family before Suite2p
-D1_SECONDARY: tuple[tuple[str, str, str, float, str | None, str], ...] = (
-    *(m[:6] for m in D1_MEASURES[4:]),
-    ("error x3, astrocyte sites", "injection", "err_05hz", 3.0, "astro", "lower"),
-    ("error x3, control sites", "injection", "err_05hz", 3.0, "control", "lower"),
-)
-D1_CASE = {"injection": ["location", "recording", "case"],                     # a case's identity per table
-           "leakage": ["location", "recording", "target", "scale"]}
-
-
-def d1_by_location(table: pd.DataFrame, value: str, scale: float) -> pd.DataFrame:
-    """(location x method): each location's median over its cases at ``scale``."""
-    g = table[table.scale == scale]
-    loc = g.groupby(["location", "method"])[value].median().unstack()
-    if loc.isna().any().any():
-        raise SystemExit(f"{value} x{scale:g}: a location lacks a method")
-    return loc
-
-
-def d1_compare(loc: pd.DataFrame) -> dict[str, dict[str, float]]:
-    """ASTRID minus each declared comparator over the locations: the mean difference, the locations where
-    ASTRID is lower, the Wilcoxon p and Holm's over the six."""
-    stats: dict[str, dict[str, float]] = {}
-    raw_p: dict[str, float] = {}
-    for m in D1_DECLARED:
-        d = (loc[OURS] - loc[m]).to_numpy()
-        p = wilcoxon_p(d)
-        raw_p[m] = p
-        stats[m] = {"mean_diff": float(d.mean()), "wins": int((d < 0).sum()), "n": int(d.size), "p": p}
-    for m, ph in holm(raw_p).items():
-        stats[m]["p_holm"] = ph
-    return stats
-
-
-def d1_primary(tables: Mapping[str, pd.DataFrame]) -> dict[str, Any]:
-    """The four primary columns against the six declared comparators (Holm over the six)."""
-    record: dict[str, Any] = {}
-    for col, name, value, scale in COLUMNS:
-        t = tables[name]
-        loc = d1_by_location(t, value, scale)
-        g = t[(t.scale == scale) & (t.method == OURS)]
-        shown = (OURS, *D1_DECLARED, *REFERENCE)
-        record[col] = {"measure": f"{value}, each location's median over its cases", "scale": scale,
-                       "locations": loc.index.tolist(),
-                       "mouse": [s.split("_")[0] for s in loc.index],
-                       "recordings": g.groupby("location").recording.nunique().reindex(loc.index).tolist(),
-                       "cases": g.groupby("location").size().reindex(loc.index).tolist(),
-                       "scores": {m: loc[m].tolist() for m in shown},
-                       "mean": {m: float(loc[m].mean()) for m in shown},
-                       "sd": {m: float(loc[m].std(ddof=1)) for m in shown},
-                       "stats": d1_compare(loc)}
-    return record
-
-
-def suite2p_test(ours: np.ndarray, s2p: np.ndarray, better: str) -> dict[str, Any]:
-    """ASTRID against Suite2p over paired units: the mean difference (ASTRID minus Suite2p), the units where
-    ASTRID is better and the two-sided Wilcoxon p."""
-    d = np.asarray(ours, float) - np.asarray(s2p, float)
-    wins = int((d < 0).sum()) if better == "lower" else int((d > 0).sum())
-    return {"mean_diff": float(d.mean()), "wins": wins, "n": int(d.size), "p": wilcoxon_p(d)}
-
-
-def d1_suite2p(tables: Mapping[str, pd.DataFrame]) -> dict[str, Any]:
-    """ASTRID against Suite2p on every measure of ``D1_MEASURES``, each location's median over its cases."""
-    t = {}
-    for k, key in D1_CASE.items():
-        ours, s2p = tables[k][tables[k].method == OURS], tables[k][tables[k].method == "suite2p"]
-        cases = [sorted(map(tuple, g[key].astype(str).to_numpy().tolist())) for g in (ours, s2p)]
-        if cases[0] != cases[1] or len(set(cases[0])) != len(cases[0]):
-            raise SystemExit(f"D1 {k}: Suite2p's cases are not ASTRID's, one each")
-        t[k] = pd.concat([ours, s2p], ignore_index=True)
-    t["injection"]["gain_dev"] = (t["injection"].gain - 1).abs()
-    out: dict[str, Any] = {}
-    for col, kind, value, scale, site, better, primary in D1_MEASURES:
-        g = t[kind]
-        g = g[(g.scale == scale) & ((g.site == site) if site else True)]
-        loc = g[g.method.isin(["demix", "suite2p"])].groupby(["location", "method"])[value].median().unstack()
-        if loc.isna().any().any() or set(loc.columns) != {"demix", "suite2p"}:
-            raise SystemExit(f"{col}: a location lacks ASTRID's or Suite2p's score")
-        own = g[g.method == "demix"]
-        where = f" (sites: {site})" if site else ""
-        out[col] = {"measure": f"{value}, each location's median over its cases{where}",
-                    "scale": scale, "primary": primary, "better": better, "locations": loc.index.tolist(),
-                    "mouse": [s.split("_")[0] for s in loc.index],
-                    "recordings": own.groupby("location").recording.nunique().reindex(loc.index).tolist(),
-                    "cases": own.groupby("location").size().reindex(loc.index).tolist(),
-                    "scores": {m: loc[m].tolist() for m in ("demix", "suite2p")},
-                    "mean": {m: float(loc[m].mean()) for m in ("demix", "suite2p")},
-                    "sd": {m: float(loc[m].std(ddof=1)) for m in ("demix", "suite2p")},
-                    "stats": {"suite2p": suite2p_test(loc["demix"].to_numpy(), loc["suite2p"].to_numpy(),
-                                                      better)}}
-    return out
-
-
-def holm_with_suite2p(stats: dict[str, dict[str, Any]], s2p: dict[str, Any]) -> list[str]:
-    """Holm over the declared comparisons ``stats`` with Suite2p's test ``s2p`` added (the paper's family):
-    writes ``p_holm`` (over the seven) and ``p_holm_declared`` (over the six) into ``stats`` and ``p_holm``
-    into ``s2p``; returns the family."""
-    raw = {m: float(stats[m]["p"]) for m in stats}
-    old, new = holm(raw), holm({**raw, "suite2p": float(s2p["p"])})
-    for m in stats:
-        stats[m]["p_holm_declared"], stats[m]["p_holm"] = old[m], new[m]
-    s2p["p_holm"] = new["suite2p"]
-    return [*raw, "suite2p"]
-
-
-def location_values(df: pd.DataFrame, value: str,
-                    methods: tuple[str, ...]) -> tuple[list[str], dict[str, np.ndarray]]:
-    """Each location's median of ``value`` over its cases per method, at the locations with a value for
-    every method."""
-    t = df[df.method.isin(methods)].groupby(["location", "method"])[value].median().unstack("method")
-    t = t[list(methods)].dropna().sort_index()
-    return list(t.index), {m: t[m].to_numpy(dtype=float) for m in methods}
-
-
-def d1_secondary(tables: Mapping[str, pd.DataFrame], s2p: dict[str, Any]) -> dict[str, Any]:
-    """The secondary measures' families of seven (``D1_SECONDARY``). Suite2p's test must be the one in ``s2p``
-    (``d1_suite2p``) wherever that has the measure, and gets its Holm p there too."""
-    inj = tables["injection"].copy()
-    inj["gain_dev"] = (inj.gain - 1.0).abs()
-    cases = {"injection": inj, "leakage": tables["leakage"]}
-    methods = ("demix", *D1_DECLARED, "suite2p")
-    out: dict[str, Any] = {}
-    for name, kind, value, scale, site, better in D1_SECONDARY:
-        g = cases[kind]
-        g = g[(g.scale == scale) & ((g.site == site) if site else True)]
-        locs, v = location_values(g, value, methods)
-        tests: dict[str, dict[str, Any]] = {}
-        for m in methods[1:]:
-            d = v["demix"] - v[m]
-            tests[m] = {"mean_diff": float(d.mean()), "n": int(d.size), "p": wilcoxon_p(d),
-                        "wins": int((d < 0).sum() if better == "lower" else (d > 0).sum())}
-        ref = s2p.get(name, {}).get("stats", {}).get("suite2p")
-        mine = tests["suite2p"]
-        if ref is not None and ((mine["wins"], mine["n"]) != (ref["wins"], ref["n"])
-                                or abs(mine["p"] - ref["p"]) > 1e-12
-                                or abs(mine["mean_diff"] - ref["mean_diff"]) > 1e-12):
-            raise SystemExit(f"D1 {name}: Suite2p's test here is not d1_suite2p's")
-        declared_holm = holm({k: tests[k]["p"] for k in D1_DECLARED})
-        declared = {m: {**tests[m], "p_holm": declared_holm[m]} for m in D1_DECLARED}
-        test = ref if ref is not None else mine
-        family = holm_with_suite2p(declared, test)
-        out[name] = {"scale": scale, "site": site, "better": better, "locations": locs, "family": family,
-                     "stats": {**declared, "suite2p": {**mine, "p_holm": test["p_holm"]}}}
-    return out
-
-
-def d1(tables: Mapping[str, pd.DataFrame]) -> dict[str, Any]:
-    """D1's tables from the pooled per-case scores of every method (``injection`` and ``leakage``):
-    ``d1_stats`` (the primary columns), ``suite2p`` (ASTRID against Suite2p) and ``secondary``."""
-    primary = d1_primary(tables)
-    s2p = d1_suite2p(tables)
-    for col, *_ in COLUMNS:
-        if s2p[col]["locations"] != primary[col]["locations"]:
-            raise SystemExit(f"D1 {col}: Suite2p's locations are not the other methods'")
-        family = holm_with_suite2p(primary[col]["stats"], s2p[col]["stats"]["suite2p"])
-        primary[col]["holm"] = {"family": family, "suite2p": "d1_suite2p.json"}
-    return {"d1_stats": primary, "suite2p": s2p, "secondary": d1_secondary(tables, s2p)}
-
+# ----------------------------------------------------------------------------------------- D1 and D7 on the grid
 
 def cell2(x: pd.Series) -> str:
     return f"{x.mean():.2f} ± {x.std(ddof=1):.2f}"
@@ -269,51 +110,124 @@ def diff_cell(s: dict[str, Any], nd: int, fmt: Any = fmt_p) -> str:
     return f"{s['mean_diff']:+.{nd}f} ({s['wins']}/{s['n']}; {fmt(s['p_holm'])})".replace("-", "−")
 
 
-def d1_markdown(res: dict[str, Any]) -> str:
-    rec, s2p, sec = res["d1_stats"], res["suite2p"], res["secondary"]
-    n = {c: len(rec[c]["locations"]) for c, *_ in COLUMNS}
-    head = " | ".join(f"{c.replace('x', '×')} ({n[c]} locations)" for c, *_ in COLUMNS)
-    lines = ["# D1: error and leakage over the imaging locations", "",
-             "Each location's score is the median over its cases, all its recordings together: the error below "
-             "0.5 Hz of the injected ROIs, or the leakage. Mean ± SD over the locations. For each comparator: "
-             "ASTRID minus it (lower is better, so negative favors ASTRID), the locations where ASTRID is "
-             "lower, and the p of a paired two-sided Wilcoxon signed-rank test over the locations, "
-             "Holm-corrected over the seven comparisons of each column.", "",
-             f"| | {head} |", "|---|" + "---|" * len(COLUMNS)]
+def grid_column(units: pd.DataFrame, meta: dict[str, Any], better: str = "lower") -> dict[str, Any]:
+    """One column: every unit's score per method, the mean and SD over the units, and the tests (``compare7``,
+    Holm over the seven)."""
+    if units[list(METHODS)].isna().any().any():
+        raise SystemExit(f"{meta.get('measure')} {meta.get('scale')}: a unit lacks a method's score")
+    return {**meta, "better": better, "units": units.index.tolist(),
+            "scores": {m: units[m].tolist() for m in METHODS},
+            "mean": {m: float(units[m].mean()) for m in METHODS},
+            "sd": {m: float(units[m].std(ddof=1)) for m in METHODS},
+            "stats": compare7(units, better == "lower")}
 
-    def row(m: str) -> list[str]:
-        cells = []
-        for col, *_ in COLUMNS:
-            r = s2p[col] if m == "suite2p" else rec[col]
-            x = pd.Series(r["scores"][m])
-            cells.append(cell2(x) if m == OURS else f"{cell2(x)}: {diff_cell(r['stats'][m], 2)}")
-        return cells
 
-    for m in (OURS, *D1_DECLARED, "suite2p"):
-        lines.append(f"| {NAMES[m]} | " + " | ".join(row(m)) + " |")
-    lines.append(f"| {NAMES['roi']} (reference, no test) | "
-                 + " | ".join(cell2(pd.Series(rec[c]["scores"]["roi"])) for c, *_ in COLUMNS) + " |")
-    lines += ["", "Unrounded: ASTRID minus each comparator over the locations (p Holm: over the seven; "
-              "declared: over the six before Suite2p).", "",
-              "| column | comparator | mean diff | locations ASTRID lower | p | p (Holm) | p (Holm, declared) |",
-              "|---|---|---|---|---|---|---|"]
-    for col, *_ in COLUMNS:
-        tests = {**rec[col]["stats"], "suite2p": s2p[col]["stats"]["suite2p"]}
-        for m, s in tests.items():
-            declared = f"{s['p_holm_declared']:.2e}" if "p_holm_declared" in s else "—"
-            lines.append(f"| {col} | {NAMES[m]} | {s['mean_diff']:+.4f} | {s['wins']}/{s['n']} "
-                         f"| {s['p']:.2e} | {s['p_holm']:.2e} | {declared} |")
-    lines += ["", "Secondary measures (gain deviation |gain - 1|, kept correlation: higher is better, the error by "
-              "injection site): ASTRID minus each comparator, the locations where ASTRID is better, Holm over "
-              "the seven.", "",
-              "| measure (locations) | " + " | ".join(NAMES[m] for m in (*D1_DECLARED, "suite2p")) + " |",
-              "|---|" + "---|" * (len(D1_DECLARED) + 1)]
-    for name, r in sec.items():
-        lines.append(f"| {name} ({len(r['locations'])}) | "
-                     + " | ".join(diff_cell(r["stats"][m], 3) for m in (*D1_DECLARED, "suite2p")) + " |")
-    lines += ["", "Locations: " + "; ".join(
-        f"{c}: {n[c]} in {len(set(rec[c]['mouse']))} mice, {sum(rec[c]['recordings'])} recordings, "
-        f"{sum(rec[c]['cases'])} cases" for c, *_ in COLUMNS) + ".", ""]
+def ratio_summary(t: pd.DataFrame, col: str) -> dict[str, float]:
+    """A level's difficulty ratio (``sbr`` or ``arr``, one per case): its median and quartiles over the cases."""
+    x = t[t.method == OURS][col].to_numpy(float)
+    return {"cases": int(x.size), "median": float(np.median(x)), "q25": float(np.percentile(x, 25)),
+            "q75": float(np.percentile(x, 75))}
+
+
+def grid_curves(t: pd.DataFrame, unit: str, value: str, name: str, ratio: str, info: pd.DataFrame,
+                better: str = "lower") -> dict[str, Any]:
+    """The columns of one measure: every level (each unit's median over its cases at that level, with the level's
+    difficulty ratio ``ratio``), then the curve (each unit's mean of its six level scores). ``info``: per unit the
+    fields every column carries (D1 the mouse and the recordings, D7 the location)."""
+    out: dict[str, Any] = {}
+    levels = sorted(t.scale.unique())
+    if tuple(levels) != LEVELS:
+        raise SystemExit(f"{name}: levels {levels}, not the grid's {LEVELS}")
+    per = {}
+    for s in levels:
+        g = t[t.scale == s]
+        u = g.groupby([unit, "method"])[value].median().unstack()[list(METHODS)]
+        per[s] = u
+        meta = {"measure": f"{value}, each unit's median over its cases", "scale": s,
+                **info.reindex(u.index).to_dict(orient="list"),
+                "cases": g[g.method == OURS].groupby(unit).size().reindex(u.index).tolist(),
+                "ratio": {"name": ratio, **ratio_summary(g, ratio)}}
+        out[f"{name} x{s:g}"] = grid_column(u, meta, better)
+    idx = per[levels[0]].index
+    if any(not per[s].index.equals(idx) for s in levels):
+        raise SystemExit(f"{name}: the levels have different units")
+    curve = sum(per[s] for s in levels) / len(levels)
+    meta = {"measure": f"{value}: each unit's mean of its six level scores", "scale": None,
+            **info.reindex(curve.index).to_dict(orient="list")}
+    out[f"{name} curve"] = grid_column(curve, meta, better)
+    return out
+
+
+def grid_dataset(inj: pd.DataFrame, leak: pd.DataFrame, unit: str,
+                 info: Mapping[str, pd.DataFrame]) -> dict[str, Any]:
+    """Every column of D1 or D7 (module docstring): the primary measures (the error below 0.5 Hz, the leakage)
+    per level and curve, the secondary ones (the gain's distance from 1, the kept correlation, the error at
+    astrocyte and at control sites) the same way, and per level the cases with a gain below ``LOW_GAIN``."""
+    inj = inj.assign(gain_dev=(inj.gain - 1).abs())
+    rec: dict[str, Any] = {}
+    rec.update(grid_curves(inj, unit, "err_05hz", "error", "sbr", info["injection"]))
+    rec.update(grid_curves(leak, unit, "leak", "leakage", "arr", info["leakage"]))
+    sec: dict[str, Any] = {}
+    sec.update(grid_curves(inj, unit, "gain_dev", "gain deviation", "sbr", info["injection"]))
+    sec.update(grid_curves(leak, unit, "kept_corr", "kept correlation", "arr", info["leakage"], better="higher"))
+    for site, label in (("astro", "astrocyte sites"), ("control", "control sites")):
+        g = inj[inj.site == site]
+        if g.empty:
+            continue
+        sub = info["injection"].reindex(sorted(set(g[unit])))
+        sec.update(grid_curves(g, unit, "err_05hz", f"error, {label}", "sbr", sub))
+    sec["low gain"] = {f"x{s:g}": {m: int(((g.method == m) & (g.gain < LOW_GAIN)).sum()) for m in METHODS}
+                       | {"cases": int((g.method == OURS).sum())} for s, g in inj.groupby("scale")}
+    return {"primary": rec, "secondary": sec}
+
+
+def grid_markdown(record: dict[str, Any], title: str) -> list[str]:
+    """The record's columns, one row each: the units, the difficulty ratio, and every method's mean ± SD with,
+    for the seven, the units where ASTRID is better and the Holm p."""
+    lines = [f"# {title}", "",
+             "Each unit's score at a level is its median over its cases; the curve is the mean of its six level "
+             "scores. Mean ± SD over the units; for each other method, the units where ASTRID is better and the "
+             "paired two-sided Wilcoxon p, Holm-corrected over the seven within each column.", ""]
+    for group in ("primary", "secondary"):
+        cols = {k: v for k, v in record[group].items() if isinstance(v, dict) and "stats" in v}
+        lines += [f"## {group.capitalize()}", "", "| column | units | ratio, median (IQR) | "
+                  + " | ".join(NAMES[m] for m in METHODS) + " |", "|---|---|---|" + "---|" * len(METHODS)]
+        for col, c in cols.items():
+            r = c.get("ratio")
+            rr = f"{r['name']} {r['median']:.2f} ({r['q25']:.2f}-{r['q75']:.2f})" if r else ""
+            cells = []
+            for m in METHODS:
+                v = f"{c['mean'][m]:.3f} ± {c['sd'][m]:.3f}"
+                if m in COMPARED:
+                    s = c["stats"][m]
+                    v += f" ({s['wins']}/{s['n']}; {fmt_p4(s['p_holm'])})"
+                cells.append(v)
+            lines.append(f"| {col} | {len(c['units'])} | {rr} | " + " | ".join(cells) + " |")
+        lines.append("")
+    lines += [f"Cases with a gain below {LOW_GAIN}, per level:", ""]
+    for lv, row in record["secondary"]["low gain"].items():
+        lines.append(f"- {lv} ({row['cases']} cases): "
+                     + ", ".join(f"{NAMES[m]} {row[m]}" for m in METHODS if m not in REFERENCE))
+    lines.append("")
+    return lines
+
+
+def d1_info(t: pd.DataFrame) -> pd.DataFrame:
+    """Per location: its mouse (the start of its name, before the first underscore) and its recordings."""
+    rec = t[t.method == OURS].groupby("location").recording.nunique()
+    return pd.DataFrame({"mouse": rec.index.str.split("_").str[0], "recordings": rec.to_numpy()}, index=rec.index)
+
+
+def d1(tables: Mapping[str, pd.DataFrame]) -> dict[str, Any]:
+    """D1's record from the pooled per-case scores of every method (``injection`` and ``leakage``, one scoring):
+    the imaging location is the unit (``grid_dataset``)."""
+    inj, leak = tables["injection"], tables["leakage"]
+    return {"unit": "location", **grid_dataset(inj, leak, "location",
+                                               {"injection": d1_info(inj), "leakage": d1_info(leak)})}
+
+
+def d1_markdown(record: dict[str, Any]) -> str:
+    lines = grid_markdown(record, "D1: the injection and leakage tests over the imaging locations")
     return "\n".join(lines)
 
 
@@ -327,6 +241,25 @@ ABLATION_KEYS = {"injection": ["location", "recording", "case", "scale"],
                  "leakage": ["location", "recording", "target", "scale"]}
 
 
+def ablation_columns() -> tuple[tuple[str, str, str, float | None, str | None, str, bool], ...]:
+    """The ablation table's columns, (name, table, score, level (None: the curve), site (None: all), better,
+    primary): the error below 0.5 Hz and the leakage at each level and per curve, primary; at each level the gain's
+    distance from 1, the kept correlation and the error at astrocyte and at control sites, secondary."""
+    cols: list[tuple[str, str, str, float | None, str | None, str, bool]] = []
+    for name, kind, value in (("error", "injection", "err_05hz"), ("leakage", "leakage", "leak")):
+        cols += [(f"{name} x{s:g}", kind, value, s, None, "lower", True) for s in LEVELS]
+        cols.append((f"{name} curve", kind, value, None, None, "lower", True))
+    for s in LEVELS:
+        cols += [(f"gain deviation x{s:g}", "injection", "gain_dev", s, None, "lower", False),
+                 (f"kept correlation x{s:g}", "leakage", "kept_corr", s, None, "higher", False),
+                 (f"error x{s:g}, astrocyte sites", "injection", "err_05hz", s, "astro", "lower", False),
+                 (f"error x{s:g}, control sites", "injection", "err_05hz", s, "control", "lower", False)]
+    return tuple(cols)
+
+
+ABLATION_COLUMNS = ablation_columns()
+
+
 def ours_only(tables: Mapping[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     """ASTRID's rows of a pooled run, with |gain - 1| added to the injections."""
     t = {k: v[v.method == OURS].copy() for k, v in tables.items()}
@@ -334,7 +267,10 @@ def ours_only(tables: Mapping[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     return t
 
 
-def ablation_by_location(t: pd.DataFrame, value: str, scale: float, site: str | None) -> pd.Series:
+def ablation_by_location(t: pd.DataFrame, value: str, scale: float | None, site: str | None) -> pd.Series:
+    """Each location's median over its cases at ``scale``; for a curve (None), the mean of its six levels'."""
+    if scale is None:
+        return sum(ablation_by_location(t, value, s, site) for s in LEVELS) / len(LEVELS)
     g = t[(t.scale == scale) & ((t.site == site) if site else True)]
     return g.groupby("location")[value].median()
 
@@ -358,7 +294,9 @@ def ablation_compare(loc: pd.DataFrame, better: str) -> dict[str, dict[str, floa
 
 
 def ablations(full: Mapping[str, pd.DataFrame], variants: Mapping[str, Mapping[str, pd.DataFrame]]) -> dict[str, Any]:
-    """The ablation table: ``full`` and each variant's pooled scores (``read_scores``; ASTRID's rows used)."""
+    """The ablation table: ``full`` and each variant's pooled scores (``read_scores``; ASTRID's rows used, the same
+    under both scorings of the injection test), every column of ``ABLATION_COLUMNS`` over the locations, and the
+    injections with a gain below ``LOW_GAIN`` at x3 (``_descriptive``) and at every level (``_descriptive_levels``)."""
     if sorted(variants) != sorted(VARIANTS):
         raise ValueError(f"the variants must be exactly {', '.join(VARIANTS)}")
     runs = {"full": ours_only(full)} | {v: ours_only(variants[v]) for v in VARIANTS}
@@ -370,12 +308,13 @@ def ablations(full: Mapping[str, pd.DataFrame], variants: Mapping[str, Mapping[s
                 raise SystemExit(f"{v}: its {kind} cases differ from Full's ({len(got ^ ref)} differ)")
     methods = ("full", *VARIANTS)
     record: dict[str, Any] = {}
-    for col, kind, value, scale, site, better, primary in D1_MEASURES:
+    for col, kind, value, scale, site, better, primary in ABLATION_COLUMNS:
         loc = pd.DataFrame({m: ablation_by_location(runs[m][kind], value, scale, site) for m in methods})
         if loc.isna().any().any():
             raise SystemExit(f"{col}: a location lacks a variant's score")
         g = runs["full"][kind]
-        g = g[(g.scale == scale) & ((g.site == site) if site else True)]
+        g = g[((g.scale == scale) if scale is not None else g.scale.isin(LEVELS))
+              & ((g.site == site) if site else True)]
         record[col] = {"measure": f"{MEASURE.get(value, value)}, each location's median over its cases"
                                   + (f" (sites: {site})" if site else ""),
                        "scale": scale, "primary": primary, "better": better,
@@ -386,43 +325,37 @@ def ablations(full: Mapping[str, pd.DataFrame], variants: Mapping[str, Mapping[s
                        "mean": {m: float(loc[m].mean()) for m in methods},
                        "sd": {m: float(loc[m].std(ddof=1)) for m in methods},
                        "stats": ablation_compare(loc, better)}
-    low = {m: int((runs[m]["injection"].query("scale == 3").gain < 0.5).sum()) for m in methods}
+    low = {m: int((runs[m]["injection"].query("scale == 3").gain < LOW_GAIN).sum()) for m in methods}
     n3 = int((runs["full"]["injection"].scale == 3).sum())
     record["_descriptive"] = {"measure": "x3 injections with gain below 0.5", "n_cases": n3, "counts": low}
+    record["_descriptive_levels"] = {
+        f"x{s:g}": {"n_cases": int((runs["full"]["injection"].scale == s).sum()),
+                    "counts": {m: int((runs[m]["injection"].query(f"scale == {s}").gain < LOW_GAIN).sum())
+                               for m in methods}} for s in LEVELS}
     return record
 
 
 def ablation_markdown(record: dict[str, Any]) -> str:
     methods = ("full", *VARIANTS)
     lines = ["# D1 ablations: full ASTRID against each variant over the imaging locations", "",
-             "Each location's score is the median over its cases; mean ± SD over the locations. Gain deviation "
-             "is |gain - 1|. For each variant: Full minus it, the locations where Full is better (lower error, "
-             "leakage and gain deviation; higher kept correlation), and the p of a two-sided paired Wilcoxon "
-             "signed-rank test over the locations (SciPy's default method), Holm-corrected over the three variants of "
-             "each column.", ""]
-    for title, prim in (("Primary", True), ("Secondary", False)):
-        specs = [c for c in D1_MEASURES if c[6] == prim]
-        head = " | ".join(f"{c[0].replace(' x1', ' ×1').replace(' x3', ' ×3')} "
-                          f"({len(record[c[0]]['locations'])})" for c in specs)
-        lines += [f"{title}:", "", f"| | {head} |", "|---|" + "---|" * len(specs)]
+             "Each location's score is the median over its cases at a level; on a curve, the mean of its six level "
+             "scores. Mean ± SD over the locations. Gain deviation is |gain - 1|. For each variant: Full minus "
+             "it, the locations where Full is better (lower error, leakage and gain deviation; higher kept "
+             "correlation), and the p of a two-sided paired Wilcoxon signed-rank test over the locations (SciPy's "
+             "default method), Holm-corrected over the three variants of each column.", "",
+             "| column | locations | " + " | ".join(ABLATION_NAMES[m] for m in methods) + " |",
+             "|---|---|" + "---|" * len(methods)]
+    for col, *_ in ABLATION_COLUMNS:
+        r = record[col]
+        cells = []
         for m in methods:
-            cells = []
-            for spec in specs:
-                r = record[spec[0]]
-                x = pd.Series(r["scores"][m])
-                cells.append(cell2(x) if m == "full" else f"{cell2(x)}: {diff_cell(r['stats'][m], 2)}")
-            lines.append(f"| {ABLATION_NAMES[m]} | " + " | ".join(cells) + " |")
-        lines.append("")
-    lines += ["Unrounded: Full minus each variant over the locations.", "",
-              "| column | variant | mean diff | locations Full better | nonzero | p | p (Holm) |",
-              "|---|---|---|---|---|---|---|"]
-    for c in D1_MEASURES:
-        for v, s in record[c[0]]["stats"].items():
-            lines.append(f"| {c[0]} | {v} | {s['mean_diff']:+.4f} | {s['wins']}/{s['n']} "
-                         f"| {s['n_nonzero']} | {s['p']:.2e} | {s['p_holm']:.2e} |")
-    d = record["_descriptive"]
-    lines += ["", f"Descriptive: x3 injections with gain below 0.5, of {d['n_cases']}: "
-              + ", ".join(f"{ABLATION_NAMES[m]} {d['counts'][m]}" for m in methods) + ".", ""]
+            x = pd.Series(r["scores"][m])
+            cells.append(cell2(x) if m == "full" else f"{cell2(x)}: {diff_cell(r['stats'][m], 2)}")
+        lines.append(f"| {col} | {len(r['locations'])} | " + " | ".join(cells) + " |")
+    d = record["_descriptive_levels"]
+    lines += ["", "Descriptive: injections with gain below 0.5 per level: " + "; ".join(
+        f"{lv} (of {v['n_cases']}): " + ", ".join(f"{ABLATION_NAMES[m]} {v['counts'][m]}" for m in methods)
+        for lv, v in d.items()) + ".", ""]
     return "\n".join(lines)
 
 
@@ -431,9 +364,6 @@ def ablation_markdown(record: dict[str, Any]) -> str:
 D6_FPS = 30.9
 D6_BANDS = {"r_5hz": 5.0, "r_05hz": 0.5}
 D6_MOVIES = ("M", "R")                 # M: the two channels summed (one-color); R: the neuronal channel alone
-COMPARED = ("tuncat", "tuncat_astro", "fissa", "cnmf", "cnmf_astro", "ring", "suite2p")   # Holm over these
-# (COMPARED, METHODS and compare7 serve D6 and D7, whose families hold all seven comparators)
-METHODS = (OURS, *COMPARED, *REFERENCE)
 D6_PEER_KEYS = {"tuncat": "tuncat", "tuncat_astro": "tuncat_astro", "fissa": "fissa", "cnmf": "cnmf",
                 "cnmf_astro": "cnmf_astro", "roi": "tuncat_raw_roi"}
 D6_COLUMNS = (("leakage in territory", "in", "leak_5hz"),          # (name, cases, score); lower is better
@@ -757,138 +687,122 @@ def d6_markdown(record: dict[str, Any], name: str = "d6") -> str:
 D7_ERRORS = ("err_05hz", "err_2hz", "err_raw")
 
 
-def d7_injection_table(run: Path, index: list[dict[str, Any]]) -> pd.DataFrame:
-    """One row per injected case and method with the failure rule applied (``status`` ok or failure)."""
-    cases = [c for c in index if c["test"] == "injection"]
-    if not cases:
-        return pd.DataFrame()
-    s = pd.read_csv(run / "scores" / "injection_scores.csv")
-    rows = []
+def d7_tables(root: Path, baseline: str = "reported") -> dict[str, pd.DataFrame]:
+    """D7's per-case tables over every recording's scores of ``baseline`` (``cases.SCORE_DIRS``), with D7's
+    failure rule applied.
+
+    Inputs, one folder per recording under ``root``, named ``<location>_<k>`` (the location, then the recording's
+    name after the last underscore): ``compare/index.json`` (the cases, ``astrid_repro.peers``' format) and, in
+    the scoring's folder, ``injection_scores.csv`` (``case``, ``method``, ``corr``, ``gain``, ``err_05hz``,
+    ``err_2hz``, ``err_raw``, ``sbr``) and ``leakage_scores.csv`` (``target``, ``scale``, ``method``, ``leak``,
+    ``kept_corr``, ``arr``); a recording counts once its scorer's printout ``summary.txt`` is there.
+
+    The failure rule: a method's trace that is missing (no score row for a case of the index), not finite or
+    constant (a NaN correlation) is scored as the raw ROI average: its errors, gain and correlation on that case,
+    and leakage 1 with the raw ROI's kept correlation (``status`` "failure")."""
+    if baseline not in BASELINES:
+        raise ValueError(f"baseline must be one of {BASELINES}, got {baseline!r}")
+    folder = SCORE_DIRS[baseline]
+    inj, leak = [], []
     roi = REFERENCE[0]
-    for c in cases:
+    runs = sorted(p.parent.parent for p in root.glob(f"*/{folder}/summary.txt"))
+    if not runs:
+        raise SystemExit(f"no recording scored under {root} (*/{folder}/summary.txt)")
+    for run in runs:
+        location, k = run.name.rsplit("_", 1)
+        rec = f"{location}/{k}"
+        index = json.loads((run / "compare" / "index.json").read_text(encoding="utf-8"))
+        cases = [c for c in index if c["test"] == "injection"]
+        if cases:
+            s = pd.read_csv(run / folder / "injection_scores.csv")
+            for c in cases:
+                g = s[s.case == c["spec"]].set_index("method")
+                if roi not in g.index:
+                    raise SystemExit(f"{run.name} {c['spec']}: no raw ROI row")
+                for m in METHODS:
+                    ok = (m in g.index and np.isfinite(g.loc[m, list(D7_ERRORS)].to_numpy(float)).all()
+                          and np.isfinite(float(g.loc[m, "corr"])))
+                    src = g.loc[m] if ok else g.loc[roi]
+                    inj.append({"recording": rec, "location": location, "case": c["spec"], "site": c["site"],
+                                "scale": float(c["scale"]), "method": m, "status": "ok" if ok else "failure",
+                                **{e: float(src[e]) for e in (*D7_ERRORS, "gain", "corr")},
+                                "sbr": float(g.loc[roi, "sbr"])})
+        cases = [c for c in index if c["test"] == "leakage" and c["scale"] > 0]
+        if cases:
+            s = pd.read_csv(run / folder / "leakage_scores.csv")
+            for c in cases:
+                g = s[(s.target == c["base"]) & (s.scale == c["scale"])].set_index("method")
+                for m in METHODS:
+                    ok = (m in g.index and np.isfinite(float(g.loc[m, "leak"]))
+                          and np.isfinite(float(g.loc[m, "kept_corr"])))
+                    leak.append({"recording": rec, "location": location, "target": c["base"],
+                                 "scale": float(c["scale"]), "method": m, "status": "ok" if ok else "failure",
+                                 "leak": float(g.loc[m, "leak"]) if ok else 1.0,
+                                 "kept_corr": float(g.loc[m if ok else roi, "kept_corr"]),
+                                 "arr": float(g.loc[roi, "arr"])})
+    return {"injection": pd.DataFrame(inj), "leakage": pd.DataFrame(leak)}
+
+
+def d7_injection_status(run: Path, index: list[dict[str, Any]], baseline: str = "reported") -> pd.DataFrame:
+    """Per injected case and method of one recording, ``status`` ok or failure under D7's failure rule
+    (``d7_tables``), from the scores of ``baseline``."""
+    s = pd.read_csv(run / SCORE_DIRS[baseline] / "injection_scores.csv")
+    rows = []
+    for c in [c for c in index if c["test"] == "injection"]:
         g = s[s.case == c["spec"]].set_index("method")
-        if roi not in g.index or not np.isfinite(g.loc[roi, list(D7_ERRORS)].to_numpy(float)).all():
-            raise SystemExit(f"{run.name} {c['spec']}: no usable raw ROI row")
         for m in METHODS:
             ok = (m in g.index and np.isfinite(g.loc[m, list(D7_ERRORS)].to_numpy(float)).all()
                   and np.isfinite(float(g.loc[m, "corr"])))
-            src = g.loc[m] if ok else g.loc[roi]
-            rows.append({"case": c["spec"], "site": c["site"], "scale": c["scale"], "method": m,
-                         "status": "ok" if ok else "failure", **{e: float(src[e]) for e in D7_ERRORS}})
+            rows.append({"case": c["spec"], "method": m, "status": "ok" if ok else "failure"})
     return pd.DataFrame(rows)
 
 
-def d7_leakage_table(run: Path, index: list[dict[str, Any]]) -> pd.DataFrame:
-    """One row per leakage target, strength (> 0) and method, with the failure rule applied."""
-    cases = [c for c in index if c["test"] == "leakage" and c["scale"] > 0]
-    if not cases:
-        return pd.DataFrame()
-    s = pd.read_csv(run / "scores" / "leakage_scores.csv")
-    rows = []
-    for c in cases:
-        g = s[(s.target == c["base"]) & (s.scale == c["scale"])].set_index("method")
-        for m in METHODS:
-            ok = (m in g.index and np.isfinite(float(g.loc[m, "leak"]))
-                  and np.isfinite(float(g.loc[m, "kept_corr"])))
-            rows.append({"target": c["base"], "scale": c["scale"], "method": m,
-                         "status": "ok" if ok else "failure", "leak": float(g.loc[m, "leak"]) if ok else 1.0})
-    return pd.DataFrame(rows)
+def d7_info(t: pd.DataFrame) -> pd.DataFrame:
+    return t[t.method == OURS].groupby("recording").agg(location=("location", "first"))
 
 
-def d7_tables(root: Path) -> dict[str, Any]:
-    """D7's table: D1's four columns over the recordings, Holm over the seven comparators, and the imaging
-    locations apart (no test).
+def d7_locations(primary: dict[str, Any]) -> dict[str, Any]:
+    """The imaging locations apart: per primary column and location, the mean and SD of each method and the
+    recordings where ASTRID is lower; no test."""
+    out: dict[str, Any] = {}
+    for col, c in primary.items():
+        units = pd.DataFrame(c["scores"], index=c["units"])
+        where = pd.Series(c["location"], index=c["units"])
+        out[col] = {}
+        for location, sub in units.groupby(where):
+            out[col][str(location)] = {"n": int(len(sub)), "mean": {m: float(sub[m].mean()) for m in METHODS},
+                                       "sd": {m: float(sub[m].std(ddof=1)) if len(sub) > 1 else float("nan")
+                                              for m in METHODS},
+                                       "wins": {m: int((sub[OURS] < sub[m]).sum()) for m in COMPARED}}
+    return out
 
-    Inputs, one folder per recording under ``root``, named ``<location>_<k>`` (the location, then the
-    recording's name after the last underscore): ``compare/index.json`` (the cases, ``astrid_repro.peers``'
-    format), ``scores/injection_scores.csv`` (``case``, ``method``, ``corr``, ``err_05hz``, ``err_2hz``,
-    ``err_raw``, ...) and ``scores/leakage_scores.csv`` (``target``, ``scale``, ``method``, ``leak``,
-    ``kept_corr``, ...); a recording counts once its scorer's printout ``scores/summary.txt`` exists.
 
-    The failure rule: a method's trace that is missing (no score row for a case of the index), not finite or
-    constant (a NaN correlation) is scored as the raw ROI average: its error on that case, and leakage 1.
-    A recording's score is its median over its cases."""
-    inj, leak = [], []
-    runs = sorted(p.parent.parent for p in root.glob("*/scores/summary.txt"))
-    if not runs:
-        raise SystemExit(f"no scored recording under {root}")
-    for run in runs:
-        location, k = run.name.rsplit("_", 1)
-        index = json.loads((run / "compare" / "index.json").read_text(encoding="utf-8"))
-        for parts, table in ((inj, d7_injection_table(run, index)), (leak, d7_leakage_table(run, index))):
-            if len(table):
-                parts.append(table.assign(location=location, recording=f"{location}/{k}"))
-    tables = {"injection": pd.concat(inj, ignore_index=True), "leakage": pd.concat(leak, ignore_index=True)}
-    record: dict[str, Any] = {"recordings": len(runs), "columns": {}, "failures": {}, "by_location": {}}
-    for col, name, value, scale in COLUMNS:
-        t = tables[name][tables[name].scale == scale]
-        rec = t.groupby(["recording", "method"])[value].median().unstack()[list(METHODS)]
-        where = [r.split("/")[0] for r in rec.index]
-        cases = t[t.method == OURS].groupby("recording").size().reindex(rec.index)
-        record["columns"][col] = {
-            "measure": f"{value}, each recording's median over its cases", "test": name, "scale": scale,
-            "recordings": rec.index.tolist(), "location": where, "cases": cases.tolist(),
-            "scores": {m: rec[m].tolist() for m in METHODS},
-            "mean": {m: float(rec[m].mean()) for m in METHODS},
-            "sd": {m: float(rec[m].std(ddof=1)) for m in METHODS},
-            "stats": compare7(rec)}
-        if name == "injection":
-            record["columns"][col]["other_bands"] = {
-                e: {m: v.tolist() for m, v in
-                    t.groupby(["recording", "method"])[e].median().unstack()[list(METHODS)].items()}
-                for e in D7_ERRORS[1:]}
-        record["by_location"][col] = {}
-        for location in sorted(set(where)):
-            sub = rec[[w == location for w in where]]
-            if len(sub):
-                record["by_location"][col][location] = {
-                    "n": len(sub), "mean": {m: float(sub[m].mean()) for m in METHODS},
-                    "sd": {m: float(sub[m].std(ddof=1)) if len(sub) > 1 else float("nan") for m in METHODS},
-                    "wins": {m: int((sub[OURS] < sub[m]).sum()) for m in COMPARED}}
-    for name, t in tables.items():
-        f = t[t.status == "failure"].groupby("method").size().reindex(list(METHODS), fill_value=0)
-        record["failures"][name] = {"cases": int((t.method == OURS).sum()), **{m: int(f[m]) for m in METHODS}}
-    return record
+def d7(root: Path, baseline: str = "reported") -> dict[str, Any]:
+    """D7's record (``d7_tables``): the recording is the unit (``grid_dataset``), with the imaging locations apart
+    (``d7_locations``) and the failures per test and method."""
+    t = d7_tables(root, baseline)
+    d = grid_dataset(t["injection"], t["leakage"], "recording",
+                     {"injection": d7_info(t["injection"]), "leakage": d7_info(t["leakage"])})
+    d["locations"] = d7_locations(d["primary"])
+    d["failures"] = {k: {"cases": int((v.method == OURS).sum()),
+                         **{m: int(((v.method == m) & (v.status == "failure")).sum()) for m in METHODS}}
+                     for k, v in t.items()}
+    return {"unit": "recording", "recordings": int(t["injection"].recording.nunique()), "baseline": baseline, **d}
 
 
 def d7_markdown(record: dict[str, Any]) -> str:
-    cols = record["columns"]
-    head = " | ".join(f"{c.replace('x', '×')} ({len(cols[c]['recordings'])} recordings)" for c, *_ in COLUMNS)
-    lines = [f"# D7: error and leakage over the recordings ({record['recordings']} recordings)", "",
-             "D1's tests on D7. Error: the injected neurons' relative error below 0.5 Hz. Leakage: the share of "
-             "the injected astrocyte signal that reaches the trace (0 is ideal, the raw ROI scores 1). Each "
-             "recording's score is the median over its cases; mean ± SD over the recordings. For each "
-             "comparator: ASTRID minus it (lower is better, so negative favors ASTRID), the recordings where "
-             "ASTRID is lower, and the p of a paired two-sided Wilcoxon signed-rank test over the recordings, "
-             "Holm-corrected over the seven comparisons of each column. A failed trace is scored as the raw ROI "
-             "(its error, leakage 1).", "",
-             f"| | {head} |", "|---|" + "---|" * len(COLUMNS)]
-    for m in (OURS, *COMPARED):
-        cells = []
-        for col, *_ in COLUMNS:
-            x = pd.Series(cols[col]["scores"][m])
-            cells.append(cell3(x) if m == OURS else f"{cell3(x)}: {diff_cell(cols[col]['stats'][m], 3, fmt_p4)}")
-        lines.append(f"| {NAMES[m]} | " + " | ".join(cells) + " |")
-    lines.append(f"| {NAMES['roi']} (reference, no test) | "
-                 + " | ".join(cell3(pd.Series(cols[c]["scores"]["roi"])) for c, *_ in COLUMNS) + " |")
-    lines += ["", "Unrounded: ASTRID minus each comparator over the recordings.", "",
-              "| column | comparator | mean diff | recordings ASTRID lower | p | p (Holm) |",
-              "|---|---|---|---|---|---|"]
-    for col, *_ in COLUMNS:
-        for m, s in cols[col]["stats"].items():
-            lines.append(f"| {col} | {NAMES[m]} | {s['mean_diff']:+.4f} | {s['wins']}/{s['n']} "
-                         f"| {s['p']:.4f} | {s['p_holm']:.4f} |")
-    lines += ["", "The imaging locations apart: mean ± SD over each location's recordings, and the recordings where "
-              "ASTRID is lower; no test.", "",
+    lines = grid_markdown(record, f"D7: the injection and leakage tests over the recordings ({record['baseline']})")
+    lines += ["## The imaging locations apart", "",
+              "Mean ± SD over each location's recordings, and the recordings where ASTRID is lower; no test.", "",
               "| column | location | n | " + " | ".join(NAMES[m] for m in METHODS) + " |",
               "|---|---|---|" + "---|" * len(METHODS)]
-    for col, *_ in COLUMNS:
-        for location, c in record["by_location"][col].items():
+    for col, per in record["locations"].items():
+        for location, c in per.items():
             vals = [f"{c['mean'][m]:.3f} ± {c['sd'][m]:.3f}"
                     + ("" if m in (OURS, *REFERENCE) else f" ({c['wins'][m]}/{c['n']})") for m in METHODS]
             lines.append(f"| {col} | {location} | {c['n']} | " + " | ".join(vals) + " |")
     for name, f in record["failures"].items():
-        lines += ["", f"Failures ({name}, {f['cases']} cases, scored as the raw ROI): "
+        lines += ["", f"Failures ({name}, {f['cases']} cases of ASTRID, scored as the raw ROI): "
                   + ", ".join(f"{NAMES[m]} {f[m]}" for m in METHODS if m not in REFERENCE) + "."]
     lines.append("")
     return "\n".join(lines)
@@ -899,7 +813,6 @@ def d7_markdown(record: dict[str, Any]) -> str:
 SPLIT_METHODS = ("demix", "ring", "fissa", "tuncat", "tuncat_astro", "cnmf", "cnmf_astro", "suite2p")
 SPLIT_VALUES = ("err05", "gain_part", "resid_part", "g05", "g_raw", "dev05", "dev_raw")
 SPLIT_BAND_HZ = 0.5                    # the error's band
-LOW_GAIN = 0.5                         # x3 cases with a gain below this are counted
 
 
 def error_split(trace: np.ndarray, truth: np.ndarray, fps: float) -> dict[str, float]:
@@ -918,17 +831,17 @@ def error_split(trace: np.ndarray, truth: np.ndarray, fps: float) -> dict[str, f
 
 
 def d7_error_split(run: Path, results: list[Path] | None = None) -> pd.DataFrame:
-    """One recording's error split (``error_split``), one row per injected case and method of
-    ``SPLIT_METHODS``, with D7's failure rule (``d7_injection_table``): a failed method takes the raw ROI
-    average's values (``failed`` True). ``g_raw_as_is`` and ``g05_as_is`` are the method's own gains whatever
-    its status (NaN without a trace), from which the gains below ``LOW_GAIN`` are counted; ``dev_raw`` and
-    ``dev05`` are |g - 1|. Inputs: a D7 run folder (``astrid_repro.d7``: ``run.json``, ``compare/``,
+    """One recording's error split (``error_split``) on the traces as the methods give them, one row per injected
+    case and method of ``SPLIT_METHODS``, with D7's failure rule (``d7_injection_status``): a failed method takes
+    the raw ROI average's values (``failed`` True). ``g_raw_as_is`` and ``g05_as_is`` are the method's own gains
+    whatever its status (NaN without a trace), from which the gains below ``LOW_GAIN`` are counted; ``dev_raw``
+    and ``dev05`` are |g - 1|. Inputs: a D7 run folder (``astrid_repro.d7``: ``run.json``, ``compare/``,
     ``injection/``, ``scores/``) and the folders of the peers' results (default ``<run>/compare/results``)."""
     from astrid_repro.cases import case_traces
 
     fps = float(json.loads((run / "run.json").read_text(encoding="utf-8"))["fps"])
     index = json.loads((run / "compare" / "index.json").read_text(encoding="utf-8"))
-    status = d7_injection_table(run, index)
+    status = d7_injection_status(run, index)
     folders = results if results is not None else [run / "compare" / "results"]
     rows = []
     for c in [c for c in index if c["test"] == "injection"]:
@@ -1010,35 +923,29 @@ NEST_OPTIMIZERS = (None, "powell", "nm", "bfgs", "cg")   # the mixed model's: st
 D6_NEST_COLUMN = "leakage in territory"
 
 
-def nesting_columns(d1_folder: Path, d6: Path, d7: Path) -> list[dict[str, Any]]:
-    """Every column the check covers, from the tables' own per-unit scores: D1's four primary columns
-    (``stats d1``'s ``d1_stats.json`` and ``d1_suite2p.json`` in ``d1_folder``; Holm over the seven comparators),
-    D6's primary column (``stats d6``'s record) and D7's four columns (``stats d7``'s record, the location as the
-    mouse). A unit's mouse is the tables' own: on D1 and D6 the start of the location's name, on D7 the location."""
-    d1 = json.loads((d1_folder / "d1_stats.json").read_text(encoding="utf-8"))
-    s2p = json.loads((d1_folder / "d1_suite2p.json").read_text(encoding="utf-8"))
-    out = []
-    for col, *_ in COLUMNS:
-        c, s = d1[col], s2p[col]
-        if s["locations"] != c["locations"] or s["scores"][OURS] != c["scores"][OURS]:
-            raise SystemExit(f"D1 {col}: d1_suite2p.json's locations or ASTRID's scores are not d1_stats.json's")
-        scores = {m: dict(zip(c["locations"], c["scores"][m], strict=True)) for m in (OURS, *D1_DECLARED)}
-        scores["suite2p"] = dict(zip(s["locations"], s["scores"]["suite2p"], strict=True))
-        p = {m: c["stats"][m]["p_holm"] for m in D1_DECLARED} | {"suite2p": s["stats"]["suite2p"]["p_holm"]}
-        out.append({"dataset": "D1", "column": col, "units": c["locations"], "mouse": c["mouse"], "scores": scores,
-                    "p_holm": p})
+NEST_GRID_COLUMNS = ("error curve", "leakage curve")
+
+
+def nesting_columns(d1: Path, d6: Path, d7: Path) -> list[dict[str, Any]]:
+    """Every column the check covers, from the tables' own per-unit scores: D1's and D7's error and leakage curves
+    (``stats d1``'s and ``stats d7``'s records, Holm over the seven) and D6's primary column (``stats d6``'s
+    record). A unit's mouse is the tables' own: on D1 and D6 the start of the location's name, on D7 the location
+    (one mouse each)."""
+    cols: dict[str, list[dict[str, Any]]] = {}
+    for ds, path, mouse_key in (("D1", d1, "mouse"), ("D7", d7, "location")):
+        rec = json.loads(path.read_text(encoding="utf-8"))
+        cols[ds] = []
+        for col in NEST_GRID_COLUMNS:
+            c = rec["primary"][col]
+            cols[ds].append({"dataset": ds, "column": col, "units": c["units"], "mouse": c[mouse_key],
+                             "scores": {m: dict(zip(c["units"], c["scores"][m], strict=True))
+                                        for m in (OURS, *COMPARED)},
+                             "p_holm": {m: c["stats"][m]["p_holm"] for m in COMPARED}})
     c = json.loads(d6.read_text(encoding="utf-8"))["columns"][D6_NEST_COLUMN]
-    out.append({"dataset": "D6", "column": D6_NEST_COLUMN, "units": c["locations"], "mouse": c["mouse"],
-                "scores": {m: dict(zip(c["locations"], c["scores"][m], strict=True)) for m in (OURS, *COMPARED)},
-                "p_holm": {m: c["stats"][m]["p_holm"] for m in COMPARED}})
-    cols7 = json.loads(d7.read_text(encoding="utf-8"))["columns"]
-    for col, *_ in COLUMNS:
-        c = cols7[col]
-        out.append({"dataset": "D7", "column": col, "units": c["recordings"], "mouse": c["location"],
-                    "scores": {m: dict(zip(c["recordings"], c["scores"][m], strict=True))
-                               for m in (OURS, *COMPARED)},
-                    "p_holm": {m: c["stats"][m]["p_holm"] for m in COMPARED}})
-    return out
+    six = {"dataset": "D6", "column": D6_NEST_COLUMN, "units": c["locations"], "mouse": c["mouse"],
+           "scores": {m: dict(zip(c["locations"], c["scores"][m], strict=True)) for m in (OURS, *COMPARED)},
+           "p_holm": {m: c["stats"][m]["p_holm"] for m in COMPARED}}
+    return [*cols["D1"], six, *cols["D7"]]
 
 
 def nesting_per_mouse(d: pd.Series, mouse: pd.Series, direction: float) -> dict[str, Any]:
@@ -1200,6 +1107,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--name", default="d6")
     p = sub.add_parser("d7", help="D7's table from every recording's per-case scores")
     p.add_argument("--root", type=Path, required=True, help="the recordings' folders (see d7_tables)")
+    p.add_argument("--baseline", choices=BASELINES, default="reported",
+                   help="the scoring whose folder is read (without_added: the paper's tables)")
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--name", default="d7")
     p = sub.add_parser("d7-split", help="D7's error split (Supplementary Equation S24)")
@@ -1208,7 +1117,7 @@ def main(argv: list[str] | None = None) -> int:
                    help="the peers' results folders, relative to each recording's folder (default compare/results)")
     p.add_argument("--out", type=Path, required=True)
     p = sub.add_parser("nesting", help="the tests' units nested in mice (Supplementary Table S5)")
-    p.add_argument("--d1", type=Path, required=True, help="stats d1's output folder (d1_stats.json, d1_suite2p.json)")
+    p.add_argument("--d1", type=Path, required=True, help="stats d1's record (d1.json)")
     p.add_argument("--d6", type=Path, required=True, help="stats d6's record (the d6.json of its scoring)")
     p.add_argument("--d7", type=Path, required=True, help="stats d7's record (d7.json)")
     p.add_argument("--no-mixed-model", action="store_true", help="leave out the mixed model (no statsmodels)")
@@ -1217,12 +1126,10 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")         # the tables' ± and − on a Windows console
     if a.command == "d1":
-        res = d1(read_scores(a.scores, a.suffix))
-        write_json(a.out / "d1_stats.json", res["d1_stats"])
-        write_json(a.out / "d1_suite2p.json", res["suite2p"])
-        write_json(a.out / "d1_secondary.json", res["secondary"])
-        text = d1_markdown(res)
-        (a.out / "d1_stats.md").write_text(text, encoding="utf-8")
+        record = d1(read_scores(a.scores, a.suffix))
+        write_json(a.out / "d1.json", record)
+        text = d1_markdown(record)
+        (a.out / "d1.md").write_text(text, encoding="utf-8")
     elif a.command == "ablations":
         folders = dict(v.split("=", 1) for v in a.variant)
         if sorted(folders) != sorted(VARIANTS):
@@ -1265,7 +1172,7 @@ def main(argv: list[str] | None = None) -> int:
         text = nesting_markdown(record)
         (a.out / "nesting.md").write_text(text, encoding="utf-8")
     else:
-        record = d7_tables(a.root)
+        record = d7(a.root, a.baseline)
         write_json(a.out / f"{a.name}.json", record)
         text = d7_markdown(record)
         (a.out / f"{a.name}.md").write_text(text, encoding="utf-8")

@@ -23,9 +23,13 @@ WORSE = {"demix": 0.0, "tuncat": 0.02, "tuncat_astro": 0.1, "fissa": 0.2, "cnmf"
          "ring": 0.15, "suite2p": 0.12, "roi": 0.5}
 
 
+LEVELS = (0.5, 1.0, 2.0, 3.0, 4.0, 5.0)
+
+
 def d1_tables(n_loc: int = 8, seed: int = 0) -> dict[str, pd.DataFrame]:
     """Pooled per-case scores of every method: ``n_loc`` locations (three mice), two recordings each, three
-    injection sites at x1 and x3 and two leakage targets; every comparator is worse than ASTRID on average."""
+    injection sites and two leakage targets at the six amplitudes, with each case's difficulty ratio; every
+    comparator is worse than ASTRID on average."""
     rng = np.random.default_rng(seed)
     inj, leak = [], []
     for i in range(n_loc):
@@ -33,22 +37,24 @@ def d1_tables(n_loc: int = 8, seed: int = 0) -> dict[str, pd.DataFrame]:
         for rec in ("r1", "r2"):
             for j in range(3):
                 site = "astro" if j % 2 == 0 else "control"
-                for scale in (1.0, 3.0):
-                    base = rng.uniform(0.3, 0.8)
+                ratio = rng.uniform(0.3, 1.5)
+                for scale in LEVELS:
+                    base = rng.uniform(0.3, 0.8) / scale
                     for m in METHODS:
                         err = base + WORSE[m] + rng.normal(0, 0.05)
                         inj.append({"case": f"inj{j:02d}-{site}-x{scale:g}", "site": site, "scale": scale,
                                     "method": m, "corr": 0.9, "gain": 1 + WORSE[m] + rng.normal(0, 0.05),
                                     "err_raw": 2 * err, "err_2hz": 1.5 * err, "err_05hz": err,
-                                    "location": loc, "recording": rec})
+                                    "sbr": ratio * scale, "location": loc, "recording": rec})
             for target in ("M-001", "M-002"):
-                for scale in (1.0, 3.0):
+                ratio = rng.uniform(0.2, 1.0)
+                for scale in LEVELS:
                     base = rng.uniform(0.2, 0.5)
                     for m in METHODS:
                         lk = 1.0 if m == "roi" else base + WORSE[m] + rng.normal(0, 0.05)
                         leak.append({"target": target, "scale": scale, "method": m, "leak": lk, "leak_05hz": lk,
-                                     "kept_corr": 0.95 - WORSE[m] + rng.normal(0, 0.02), "location": loc,
-                                     "recording": rec})
+                                     "kept_corr": 0.95 - WORSE[m] + rng.normal(0, 0.02), "arr": ratio * scale,
+                                     "location": loc, "recording": rec})
     return {"injection": pd.DataFrame(inj), "leakage": pd.DataFrame(leak)}
 
 
@@ -57,57 +63,64 @@ def location_medians(t: pd.DataFrame, value: str, scale: float, method: str) -> 
     return g.groupby("location")[value].median()
 
 
-def test_d1_units_tests_and_holm_with_suite2p() -> None:
+def test_d1_levels_curves_and_holm_over_seven() -> None:
     tables = d1_tables()
-    res = stats.d1(tables)
-    rec, s2p, sec = res["d1_stats"], res["suite2p"], res["secondary"]
-    assert list(rec) == ["error x1", "error x3", "leakage x1", "leakage x3"]
-    r = rec["error x1"]
-    assert r["locations"] == sorted({f"m{i % 3}_loc{i:02d}" for i in range(8)})
-    assert r["mouse"] == [s.split("_")[0] for s in r["locations"]]
-    assert r["recordings"] == [2] * 8 and r["cases"] == [6] * 8         # 3 sites x 2 recordings at x1
-    ours = location_medians(tables["injection"], "err_05hz", 1.0, "demix")
-    np.testing.assert_array_equal(r["scores"]["demix"], ours.to_numpy())
+    t = tables["injection"]
+    t.loc[(t.method == "demix") & (t.scale == 1.0) & (t.location == "m0_loc00"), "gain"] = 0.2   # 6 low gains
+    rec = stats.d1(tables)
+    prim, sec = rec["primary"], rec["secondary"]
+    assert rec["unit"] == "location"
+    assert list(prim) == [*(f"error x{s:g}" for s in LEVELS), "error curve",
+                          *(f"leakage x{s:g}" for s in LEVELS), "leakage curve"]
+    c = prim["error x1"]
+    assert c["units"] == sorted({f"m{i % 3}_loc{i:02d}" for i in range(8)}) and c["scale"] == 1.0
+    assert c["mouse"] == [s.split("_")[0] for s in c["units"]]
+    assert c["recordings"] == [2] * 8 and c["cases"] == [6] * 8              # 3 sites x 2 recordings per level
+    ours = location_medians(t, "err_05hz", 1.0, "demix")
+    np.testing.assert_array_equal(c["scores"]["demix"], ours.to_numpy())
     raw = {}
-    for m in stats.D1_DECLARED:
-        d = ours.to_numpy() - location_medians(tables["injection"], "err_05hz", 1.0, m).to_numpy()
-        s = r["stats"][m]
+    for m in stats.COMPARED:                                              # Suite2p among the seven
+        d = ours.to_numpy() - location_medians(t, "err_05hz", 1.0, m).to_numpy()
+        s = c["stats"][m]
         assert s["p"] == wilcoxon(d).pvalue and s["mean_diff"] == d.mean() and s["wins"] == int((d < 0).sum())
         raw[m] = s["p"]
-    raw["suite2p"] = s2p["error x1"]["stats"]["suite2p"]["p"]
-    seven, six = metrics.holm(raw), metrics.holm({k: v for k, v in raw.items() if k != "suite2p"})
-    for m in stats.D1_DECLARED:
-        assert r["stats"][m]["p_holm"] == seven[m] and r["stats"][m]["p_holm_declared"] == six[m]
-        assert r["stats"][m]["p_holm"] >= r["stats"][m]["p_holm_declared"]          # a comparison more
-    assert s2p["error x1"]["stats"]["suite2p"]["p_holm"] == seven["suite2p"]
-    assert r["holm"]["family"] == [*stats.D1_DECLARED, "suite2p"]
-    assert "suite2p" not in r["scores"] and r["scores"]["roi"]                    # roi: a reference, no test
-    # Suite2p on every measure, the secondary ones in families of seven
-    assert list(s2p) == [m[0] for m in stats.D1_MEASURES]
-    assert list(sec) == [m[0] for m in stats.D1_SECONDARY]
-    g = sec["gain deviation x1"]
-    gd = tables["injection"].assign(gain_dev=(tables["injection"].gain - 1).abs())
+    assert {m: c["stats"][m]["p_holm"] for m in stats.COMPARED} == metrics.holm(raw)
+    assert "roi" not in c["stats"] and c["scores"]["roi"]                 # roi: a reference, no test
+    x = t[(t.scale == 1.0) & (t.method == "demix")].sbr.to_numpy()
+    assert c["ratio"] == {"name": "sbr", "cases": x.size, "median": float(np.median(x)),
+                          "q25": float(np.percentile(x, 25)), "q75": float(np.percentile(x, 75))}
+    assert prim["leakage x5"]["ratio"]["name"] == "arr"
+    curve = prim["error curve"]                                           # each location's mean of its six levels
+    expect = sum(pd.DataFrame(prim[f"error x{s:g}"]["scores"], index=c["units"]) for s in LEVELS) / len(LEVELS)
+    np.testing.assert_array_equal(curve["scores"]["fissa"], expect["fissa"].to_numpy())
+    assert curve["scale"] is None and "ratio" not in curve and curve["mouse"] == c["mouse"]
+    d = np.asarray(curve["scores"]["demix"]) - np.asarray(curve["scores"]["tuncat"])
+    assert curve["stats"]["tuncat"]["p"] == wilcoxon(d).pvalue
+    # the secondary measures: per level and per curve
+    names = {"gain deviation", "kept correlation", "error, astrocyte sites", "error, control sites"}
+    assert set(sec) == {f"{n} {lv}" for n in names for lv in (*(f"x{s:g}" for s in LEVELS), "curve")} | {"low gain"}
+    gd = t.assign(gain_dev=(t.gain - 1).abs())
     d = (location_medians(gd, "gain_dev", 1.0, "demix") - location_medians(gd, "gain_dev", 1.0, "cnmf")).to_numpy()
-    assert g["stats"]["cnmf"]["p"] == wilcoxon(d).pvalue and g["stats"]["cnmf"]["wins"] == int((d < 0).sum())
-    k = sec["kept correlation x1"]["stats"]["fissa"]                        # higher is better
-    assert k["wins"] == k["n"] and k["mean_diff"] > 0
-    assert sec["error x1, astrocyte sites"]["stats"]["suite2p"]["p_holm"] == \
-        s2p["error x1, astrocyte sites"]["stats"]["suite2p"]["p_holm"]
-    assert all(len(sec[n]["family"]) == 7 for n in sec)
-    text = stats.d1_markdown(res)
-    assert "| Suite2p |" in text and "TUnCaT + terr." in text
+    g = sec["gain deviation x1"]["stats"]["cnmf"]
+    assert g["p"] == wilcoxon(d).pvalue and g["wins"] == int((d < 0).sum())
+    k = sec["kept correlation x1"]
+    assert k["better"] == "higher" and k["stats"]["fissa"]["wins"] == k["stats"]["fissa"]["n"] and k["ratio"]["name"] == "arr"
+    a = sec["error, astrocyte sites x2"]
+    assert a["cases"] == [4] * 8 and a["ratio"]["cases"] == 8 * 4          # the sites j = 0 and 2, two recordings
+    assert sec["low gain"]["x1"]["demix"] == 6 and sec["low gain"]["x1"]["cases"] == 8 * 6
+    assert sec["low gain"]["x2"]["demix"] == 0
+    text = stats.d1_markdown(rec)
+    assert "| error curve | 8 |" in text and "TUnCaT + terr." in text and "Suite2p" in text
 
 
-def test_d1_refuses_a_location_without_a_method_and_suite2p_without_astrids_cases() -> None:
+def test_d1_refuses_a_unit_without_a_method_and_a_missing_level() -> None:
     tables = d1_tables()
     t = tables["injection"]
     gap = {**tables, "injection": t[~((t.location == "m0_loc00") & (t.method == "fissa") & (t.scale == 1.0))]}
-    with pytest.raises(SystemExit, match="a location lacks a method"):
+    with pytest.raises(SystemExit, match="lacks a method"):
         stats.d1(gap)
-    t = tables["leakage"]
-    one = t.index[(t.method == "suite2p")][0]
-    with pytest.raises(SystemExit, match="Suite2p's cases are not ASTRID's"):
-        stats.d1({**tables, "leakage": t.drop(index=one)})
+    with pytest.raises(SystemExit, match="not the grid's"):
+        stats.d1({**tables, "injection": t[t.scale != 4.0]})
 
 
 def test_one_wilcoxon_with_its_method() -> None:
@@ -120,23 +133,30 @@ def test_one_wilcoxon_with_its_method() -> None:
         metrics.wilcoxon_p(d, "asymptotic")
 
 
-def test_ablations_default_test_holm_over_three_and_the_same_cases() -> None:
+def test_ablations_levels_curves_holm_over_three_and_the_same_cases() -> None:
     full = d1_tables(seed=1)
     ours = {k: v[v.method == "demix"] for k, v in full.items()}
     worse = {k: v.assign(err_05hz=v.get("err_05hz", 0) + 0.1, leak=v.get("leak", 0) + 0.1) for k, v in ours.items()}
     low = ours["injection"].copy()
-    low.loc[low.index[:5], "gain"] = 0.1                                   # five x1 or x3 gains below 0.5
+    x3 = low.index[low.scale == 3.0][:5]
+    low.loc[x3, "gain"] = 0.1                                             # five x3 gains below 0.5
     variants = {"I": worse, "II": ours, "III": {**ours, "injection": low}}
     rec = stats.ablations(full, variants)
+    assert [c for c in rec if not c.startswith("_")] == [c[0] for c in stats.ABLATION_COLUMNS]
+    assert {"error curve", "leakage curve", "error x0.5", "gain deviation x5", "error x4, control sites"} <= set(rec)
     s = rec["error x1"]["stats"]
     assert s["II"]["p"] == 1.0 and s["II"]["n_nonzero"] == 0 and s["II"]["wins"] == 0  # identical: no test
     d = np.asarray(rec["error x1"]["scores"]["full"]) - np.asarray(rec["error x1"]["scores"]["I"])
     assert s["I"]["p"] == wilcoxon(d).pvalue and s["I"]["wins"] == s["I"]["n"] == 8
     assert {v: s[v]["p_holm"] for v in stats.VARIANTS} == metrics.holm({v: s[v]["p"] for v in stats.VARIANTS})
-    assert rec["kept correlation x1"]["better"] == "higher"
-    n3 = int((low.scale == 3).sum())
-    assert rec["_descriptive"]["n_cases"] == n3
-    assert rec["_descriptive"]["counts"]["III"] == int((low[low.scale == 3].gain < 0.5).sum())
+    c = rec["error curve"]                                                # each location's mean of its six levels
+    expect = sum(np.asarray(rec[f"error x{lv:g}"]["scores"]["full"]) for lv in LEVELS) / len(LEVELS)
+    np.testing.assert_allclose(c["scores"]["full"], expect, rtol=1e-15)
+    assert c["scale"] is None and c["cases"] == [6 * 6] * 8                  # every level's cases
+    assert rec["kept correlation x1"]["better"] == "higher" and not rec["kept correlation x1"]["primary"]
+    assert rec["_descriptive"]["n_cases"] == int((low.scale == 3).sum())
+    assert rec["_descriptive"]["counts"]["III"] == 5 and rec["_descriptive_levels"]["x3"]["counts"]["III"] == 5
+    assert rec["_descriptive_levels"]["x1"]["counts"]["III"] == 0
     assert "I, no astrocyte components" in stats.ablation_markdown(rec)
     with pytest.raises(SystemExit, match="cases differ"):
         stats.ablations(full, {**variants, "III": {**ours, "injection": low.iloc[1:]}})
@@ -234,62 +254,71 @@ def test_d6_tables() -> None:
     assert "2 mice" not in stats.d6_markdown(rec) and "3 mice" in stats.d6_markdown(rec)
 
 
-def d7_recording(root: Path, name: str, seed: int, scored: bool = True) -> None:
-    """A D7 recording folder (``stats.d7_tables``' layout): two injected sites at x1 and x3, one leakage
-    target at x1 and x3 (with its x0 case, not scored)."""
+def d7_recording(root: Path, name: str, seed: int, scored: bool = True, folder: str = "scores") -> None:
+    """A D7 recording folder (``stats.d7_tables``' layout): two injected sites and one leakage target (with its
+    x0 case, not scored) at the six amplitudes, scored in ``folder``."""
     rng = np.random.default_rng(seed)
     d = root / name
-    (d / "compare").mkdir(parents=True)
-    (d / "scores").mkdir()
-    index = [{"spec": f"inj0{j}-astro-x{s}", "base": f"inj0{j}-astro", "test": "injection", "scale": float(s),
-              "site": "astro"} for j in range(2) for s in (1, 3)]
-    index += [{"spec": f"M-007-astro-x{s}", "base": "M-007", "test": "leakage", "scale": float(s), "site": ""}
-              for s in (0, 1, 3)]
+    (d / "compare").mkdir(parents=True, exist_ok=True)
+    (d / folder).mkdir()
+    index = [{"spec": f"inj0{j}-astro-x{s:g}", "base": f"inj0{j}-astro", "test": "injection", "scale": float(s),
+              "site": "astro" if j == 0 else "control"} for j in range(2) for s in LEVELS]
+    index += [{"spec": f"M-007-astro-x{s:g}", "base": "M-007", "test": "leakage", "scale": float(s), "site": ""}
+              for s in (0.0, *LEVELS)]
     (d / "compare" / "index.json").write_text(json.dumps(index))
     inj, leak = [], []
-    for c in index[:4]:
+    for c in index[:12]:
         for m in stats.METHODS:
             err = 0.3 + WORSE[m] + rng.normal(0, 0.02)
-            inj.append({"case": c["spec"], "site": "astro", "scale": c["scale"], "method": m, "corr": 0.9,
-                        "gain": 1.0, "err_raw": err, "err_2hz": err, "err_05hz": err})
-    for s in (1.0, 3.0):
+            inj.append({"case": c["spec"], "site": c["site"], "scale": c["scale"], "method": m, "corr": 0.9,
+                        "gain": 1.0, "err_raw": err, "err_2hz": err, "err_05hz": err, "sbr": 2 * c["scale"]})
+    for s in LEVELS:
         for m in stats.METHODS:
             leak.append({"target": "M-007", "scale": s, "method": m, "leak": 0.2 + WORSE[m], "leak_05hz": 0.1,
-                         "kept_corr": 0.9})
+                         "kept_corr": 0.9, "arr": s})
     inj_t, leak_t = pd.DataFrame(inj), pd.DataFrame(leak)
     if seed == 0:                       # failures: CNMF missing on one case, FISSA's NaN correlation, a NaN leak
         inj_t = inj_t[~((inj_t.case == "inj00-astro-x1") & (inj_t.method == "cnmf"))].copy()
         inj_t.loc[(inj_t.case == "inj01-astro-x1") & (inj_t.method == "fissa"), "corr"] = np.nan
         leak_t.loc[(leak_t.scale == 1.0) & (leak_t.method == "tuncat"), "leak"] = np.nan
-    inj_t.to_csv(d / "scores" / "injection_scores.csv", index=False)
-    leak_t.to_csv(d / "scores" / "leakage_scores.csv", index=False)
+    inj_t.to_csv(d / folder / "injection_scores.csv", index=False)
+    leak_t.to_csv(d / folder / "leakage_scores.csv", index=False)
     if scored:
-        (d / "scores" / "summary.txt").write_text("scored\n")
+        (d / folder / "summary.txt").write_text("scored\n")
 
 
 def test_d7_failure_rule_units_and_locations(tmp_path: Path) -> None:
     for name, seed in (("loc1_data1", 0), ("loc1_data2", 1), ("loc2_data1", 2), ("loc2_data3", 3)):
         d7_recording(tmp_path, name, seed)
     d7_recording(tmp_path, "loc2_data9", 9, scored=False)                  # no summary.txt: not counted
-    rec = stats.d7_tables(tmp_path)
-    assert rec["recordings"] == 4
-    col = rec["columns"]["error x1"]
-    assert col["recordings"] == ["loc1/data1", "loc1/data2", "loc2/data1", "loc2/data3"]
+    rec = stats.d7(tmp_path)
+    assert rec["recordings"] == 4 and rec["unit"] == "recording" and rec["baseline"] == "reported"
+    col = rec["primary"]["error x1"]
+    assert col["units"] == ["loc1/data1", "loc1/data2", "loc2/data1", "loc2/data3"]
     assert col["location"] == ["loc1", "loc1", "loc2", "loc2"] and col["cases"] == [2] * 4
+    assert col["ratio"] == {"name": "sbr", "cases": 8, "median": 2.0, "q25": 2.0, "q75": 2.0}
     s = pd.read_csv(tmp_path / "loc1_data1" / "scores" / "injection_scores.csv").set_index(["case", "method"])
     roi = s.loc[("inj00-astro-x1", "roi"), "err_05hz"]
     other = s.loc[("inj01-astro-x1", "cnmf"), "err_05hz"]
     assert col["scores"]["cnmf"][0] == np.median([roi, other])               # the missing row: the raw ROI's
     assert rec["failures"]["injection"]["cnmf"] == 1 and rec["failures"]["injection"]["fissa"] == 1
-    assert rec["failures"]["leakage"]["tuncat"] == 1 and rec["failures"]["leakage"]["cases"] == 8
-    assert rec["columns"]["leakage x1"]["scores"]["tuncat"][0] == 1.0       # a failed leakage scores 1
-    assert set(rec["by_location"]["error x1"]) == {"loc1", "loc2"}
-    assert rec["by_location"]["error x1"]["loc1"]["n"] == 2
-    assert "err_2hz" in col["other_bands"] and "other_bands" not in rec["columns"]["leakage x3"]
+    assert rec["failures"]["leakage"]["tuncat"] == 1 and rec["failures"]["leakage"]["cases"] == 4 * 6
+    assert rec["primary"]["leakage x1"]["scores"]["tuncat"][0] == 1.0       # a failed leakage scores 1
+    assert rec["primary"]["leakage x1"]["ratio"]["median"] == 1.0           # arr
+    assert set(rec["locations"]["error curve"]) == {"loc1", "loc2"}
+    assert rec["locations"]["error x1"]["loc1"]["n"] == 2
     raw = {m: col["stats"][m]["p"] for m in stats.COMPARED}
     assert {m: col["stats"][m]["p_holm"] for m in stats.COMPARED} == metrics.holm(raw)
-    assert rec["failures"]["injection"]["cases"] == 16                     # 4 recordings x 4 injected cases
-    assert "Failures (injection, 16 cases" in stats.d7_markdown(rec)
+    assert rec["failures"]["injection"]["cases"] == 4 * 12                  # 4 recordings x 12 injected cases
+    assert {"error, astrocyte sites curve", "error, control sites x5", "gain deviation curve"} <= set(rec["secondary"])
+    text = stats.d7_markdown(rec)
+    assert "Failures (injection, 48 cases" in text and "imaging locations apart" in text
+    for name, seed in (("loc1_data1", 0), ("loc2_data1", 2)):              # another scoring, its own folder
+        d7_recording(tmp_path, name, seed + 10, folder="scores_without_added")
+    other = stats.d7(tmp_path, "without_added")
+    assert other["recordings"] == 2 and other["baseline"] == "without_added"
+    with pytest.raises(ValueError, match="baseline"):
+        stats.d7(tmp_path, "equal")
 
 
 def test_commands(tmp_path: Path) -> None:
@@ -300,21 +329,26 @@ def test_commands(tmp_path: Path) -> None:
         t.to_csv(scores / f"{k}_scores_8loc.csv", index=False)
     out = tmp_path / "out"
     assert stats.main(["d1", "--scores", str(scores), "--suffix", "8loc", "--out", str(out)]) == 0
-    for f in ("d1_stats.json", "d1_suite2p.json", "d1_secondary.json", "d1_stats.md"):
+    for f in ("d1.json", "d1.md"):
         assert (out / f).exists()
-    assert json.loads((out / "d1_stats.json").read_text())["error x1"]["holm"]["family"][-1] == "suite2p"
+    d1 = json.loads((out / "d1.json").read_text())
+    assert d1["unit"] == "location" and "error curve" in d1["primary"] and "low gain" in d1["secondary"]
     with pytest.raises(SystemExit):
         stats.main(["ablations", "--full", str(scores), "--variant", f"I={scores}", f"II={scores}",
                     "--out", str(out)])
     assert stats.main(["ablations", "--full", str(scores), "--suffix", "8loc", "--variant", f"I={scores}",
                        f"II={scores}", f"III={scores}", "--out", str(out)]) == 0
-    assert json.loads((out / "ablation_stats.json").read_text())["leakage x3"]["stats"]["I"]["p"] == 1.0
+    assert json.loads((out / "ablation_stats.json").read_text())["leakage curve"]["stats"]["I"]["p"] == 1.0
     run = d6_recording(tmp_path / "d6", "rec1", "A_loc01")
     assert stats.main(["d6-scores", "--run", str(run)]) == 0 and (run / "scores.csv").exists()
     for k in range(3):
         d7_recording(tmp_path / "d7", f"loc1_data{k}", k + 1)
+        d7_recording(tmp_path / "d7", f"loc1_data{k}", k + 4, folder="scores_without_added")
     assert stats.main(["d7", "--root", str(tmp_path / "d7"), "--out", str(out)]) == 0
     assert json.loads((out / "d7.json").read_text())["recordings"] == 3
+    assert stats.main(["d7", "--root", str(tmp_path / "d7"), "--baseline", "without_added", "--out", str(out),
+                       "--name", "d7_wa"]) == 0
+    assert json.loads((out / "d7_wa.json").read_text())["baseline"] == "without_added"
 
 
 def test_error_split_parts_add_up() -> None:
@@ -338,31 +372,27 @@ def nesting_records(folder: Path, seed: int = 6) -> tuple[Path, Path, Path]:
     ours = rng.uniform(0.3, 0.5, len(locs))
     worse = {m: ours + rng.uniform(0.05, 0.2, len(locs)) * np.where(np.arange(len(locs)) < 9, 1, -1)
              for m in stats.COMPARED}
-    d1, s2p = {}, {}
-    for col, *_ in stats.COLUMNS:
-        scores = {"demix": ours.tolist(), **{m: worse[m].tolist() for m in stats.D1_DECLARED}}
-        d1[col] = {"locations": locs, "mouse": [s.split("_")[0] for s in locs], "scores": scores,
-                   "stats": {m: {"p_holm": 0.01} for m in stats.D1_DECLARED}}
-        s2p[col] = {"locations": locs, "scores": {"demix": ours.tolist(), "suite2p": worse["suite2p"].tolist()},
-                    "stats": {"suite2p": {"p_holm": 0.2}}}
-    stats.write_json(folder / "d1" / "d1_stats.json", d1)
-    stats.write_json(folder / "d1" / "d1_suite2p.json", s2p)
+    scores = {"demix": ours.tolist(), **{m: worse[m].tolist() for m in stats.COMPARED}}
+    col = {"units": locs, "mouse": [s.split("_")[0] for s in locs], "scores": scores,
+           "stats": {m: {"p_holm": 0.01} for m in stats.COMPARED}}
+    stats.write_json(folder / "d1.json", {"unit": "location", "primary": {c: col for c in stats.NEST_GRID_COLUMNS}})
     six = {"locations": locs[:6], "mouse": ["A"] * 3 + ["B"] * 3,
            "scores": {m: (ours[:6] if m == "demix" else worse[m][:6]).tolist() for m in ("demix", *stats.COMPARED)},
            "stats": {m: {"p_holm": 0.03} for m in stats.COMPARED}}
     stats.write_json(folder / "d6.json", {"columns": {"leakage in territory": six}})
-    seven = {"recordings": [f"L{i % 2}/r{i}" for i in range(6)], "location": [f"L{i % 2}" for i in range(6)],
+    seven = {"units": [f"L{i % 2}/r{i}" for i in range(6)], "location": [f"L{i % 2}" for i in range(6)],
              "scores": six["scores"], "stats": six["stats"]}
-    stats.write_json(folder / "d7.json", {"columns": {col: seven for col, *_ in stats.COLUMNS}})
-    return folder / "d1", folder / "d6.json", folder / "d7.json"
+    stats.write_json(folder / "d7.json", {"unit": "recording", "primary": {c: seven for c in stats.NEST_GRID_COLUMNS}})
+    return folder / "d1.json", folder / "d6.json", folder / "d7.json"
 
 
 def test_nesting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(stats, "NEST_BOOT", 300)                        # fewer resamples, for speed
     d1, d6, d7 = nesting_records(tmp_path)
     rec = stats.nesting(d1, d6, d7, mixed_model=False)
-    assert [(r["dataset"], r["column"]) for r in rec["results"]][3:6] == [
-        ("D1", "leakage x3"), ("D6", "leakage in territory"), ("D7", "error x1")]
+    assert [(r["dataset"], r["column"]) for r in rec["results"]] == [
+        ("D1", "error curve"), ("D1", "leakage curve"), ("D6", "leakage in territory"), ("D7", "error curve"),
+        ("D7", "leakage curve")]
     first = rec["results"][0]
     assert first["units_per_mouse"] == {"A": 3, "B": 3, "C": 3, "D": 3}
     row = next(r for r in first["rows"] if r["comparison"] == "fissa")
@@ -375,7 +405,8 @@ def test_nesting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         stats.nesting_bootstrap(pd.Series([-1.0, -2.0, 1.0]), pd.Series(["a", "a", "b"]))   # seeded
     raw = {r["comparison"]: r["C"]["p"] for r in first["rows"]}
     assert {r["comparison"]: r["C"]["p_holm"] for r in first["rows"]} == metrics.holm(raw)
-    assert "B" not in row and "C" not in rec["results"][4]["rows"][0]
+    assert "B" not in row and "C" not in rec["results"][2]["rows"][0] and "C" not in rec["results"][3]["rows"][0]
+    assert rec["results"][3]["units_per_mouse"] == {"L0": 3, "L1": 3}       # D7: the location as the mouse
     assert stats.main(["nesting", "--d1", str(d1), "--d6", str(d6), "--d7", str(d7), "--no-mixed-model",
                        "--out", str(tmp_path / "out")]) == 0
 

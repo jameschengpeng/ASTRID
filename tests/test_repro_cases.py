@@ -163,14 +163,19 @@ def test_injections_and_placement() -> None:
     assert np.hypot(*offset) == pytest.approx(off, abs=0.75) and np.hypot(*a.shift) > 0
     cases, ch = C.injection_cases(loc, {REC: dff})
     n_sites = len(ch["sites"])
-    assert [c.name for c in cases[:2]] == ["inj00-astro-x1", "inj00-astro-x3"] and len(cases) == 2 * n_sites
-    assert [c.inject.source for c in cases[::2]] == [f"M-{[2, 1][j % 2]:03d}" for j in range(n_sites)]
+    assert C.SCALES == (0.5, 1.0, 2.0, 3.0, 4.0, 5.0) and C.LEAK_SCALES == (0.0, *C.SCALES)
+    assert [c.name for c in cases[:6]] == [f"inj00-astro-x{s}" for s in ("0.5", "1", "2", "3", "4", "5")]
+    assert len(cases) == 6 * n_sites and [c.scale for c in cases[:6]] == list(C.SCALES)
+    assert [c.inject.source for c in cases[::6]] == [f"M-{[2, 1][j % 2]:03d}" for j in range(n_sites)]
+    assert all(c.inject.source == cases[0].inject.source for c in cases[:6])     # a site's amplitudes: one source
     leak, ch = C.leakage_cases(loc, {REC: dff}, {REC: astro_dff[0]}, 1)
-    assert [c.name for c in leak[:3]] == ["M-003-astro-x0", "M-003-astro-x1", "M-003-astro-x3"]
-    assert ch["targets"] == [3, 4] and ch["astro_source"] == "A-01"
+    assert [c.name for c in leak[:7]] == [f"M-003-astro-x{s}" for s in ("0", "0.5", "1", "2", "3", "4", "5")]
+    assert ch["targets"] == [3, 4] and ch["astro_source"] == "A-01" and len(leak) == 2 * 7
     for c in cases + leak:                                  # the bases of the export, as the peers read them
         assert c.base == peers.base_of(c.name)
-    assert not leak[0].astro.dff[REC].any() and np.array_equal(leak[2].astro.dff[REC], 3.0 * astro_dff[0])
+    assert not leak[0].astro.dff[REC].any() and np.array_equal(leak[4].astro.dff[REC], 3.0 * astro_dff[0])
+    assert np.array_equal(leak[1].astro.dff[REC], 0.5 * astro_dff[0])
+    assert all(np.array_equal(c.astro.shape, leak[0].astro.shape) for c in leak[:7])  # one placement per target
 
 
 # --------------------------------------------------------------------------------------------- the patch
@@ -179,7 +184,7 @@ def test_case_patch_adds_the_signal_to_the_data_only() -> None:
     mov = toy_movie(loc, dff, astro_dff)
     leak, _ = C.leakage_cases(loc, {REC: dff}, {REC: astro_dff[0]}, 1)
     inj, _ = C.injection_cases(loc, {REC: dff})
-    case, case0, injected = leak[1], leak[0], inj[1]
+    case, case0, injected = leak[2], leak[0], inj[3]                     # x1, x0 and x3
     data = pixels(loc, [case, injected], mov)
     plain = build(loc.field, data, Spec(case.name, 3))
     cp = C.build_case(loc, data, case)
@@ -259,7 +264,7 @@ def test_export_is_the_peers_case_format(tmp_path: Path) -> None:
                            out)
     C.write_index(out, index)
     assert [r["spec"] for r in index] == [c.name for c in cases] and peers.pending(out)[1] == [c.name for c in cases]
-    assert index[0] == {"spec": "inj00-astro-x1", "base": "inj00-astro", "test": "injection", "scale": 1.0,
+    assert index[0] == {"spec": "inj00-astro-x0.5", "base": "inj00-astro", "test": "injection", "scale": 0.5,
                         "site": "astro", "neighbours": index[0]["neighbours"], "atoms": index[0]["atoms"]}
     assert index[2]["test"] == "leakage" and index[2]["site"] == "" and index[2]["scale"] == 0.0
     assert json.loads((out / "index.json").read_text()) == index
@@ -309,7 +314,8 @@ def test_scores_are_metrics(tmp_path: Path) -> None:
         np.savez(fits / f"{name}.npz", delivered=traces[name]["demix"][None], ring_trace=traces[name]["ring"][None])
         np.savez(res / f"{name}.npz", fissa=traces[name]["fissa"], tuncat_raw_roi=traces[name]["roi"])
     inj = C.injection_scores(cases, fits, index, FPS, [res])
-    assert list(inj.columns) == ["case", "site", "scale", "method", "corr", "gain", "err_raw", "err_2hz", "err_05hz"]
+    assert list(inj.columns) == ["case", "site", "scale", "method", "corr", "gain", "err_raw", "err_2hz", "err_05hz",
+                                 "sbr"]
     assert list(inj.method) == ["demix", "ring", "fissa", "roi"]
     for r in inj.itertuples():
         x = traces["inj00-astro-x1"][r.method]
@@ -320,8 +326,35 @@ def test_scores_are_metrics(tmp_path: Path) -> None:
             ac, q = x - x.mean(), truth - truth.mean()
             assert r.err_raw == float(np.linalg.norm(ac - q) / np.linalg.norm(q))
             assert r.err_raw == pytest.approx(metrics.error(x, truth, FPS, None), rel=1e-5)
+    roi_row = inj[inj.method == "roi"].iloc[0]
+    assert (inj.sbr == 1.0 / roi_row.err_05hz).all()                       # the case's ratio on every row
+    r_minus_q = traces["inj00-astro-x1"]["roi"].astype(np.float64) - truth  # by linearity, ||C L q|| / ||C L (r - q)||
+    assert roi_row.sbr == pytest.approx(np.linalg.norm(metrics.band(truth, 0.5, FPS))
+                                        / np.linalg.norm(metrics.band(r_minus_q, 0.5, FPS)), rel=1e-6)
+    # the without_added scoring: ASTRID and the ring as they are, every other trace minus its running baseline,
+    # taken from the trace without the added signal (the raw ROI average: r - q exactly); a 5-s window, because
+    # the trace (13 s) is shorter than the default 60 s, under which its baseline would be one level
+    rule = astrid.patch.BaselineRule(window_s=5.0)
+    wa = C.injection_scores(cases, fits, index, FPS, [res], "without_added", rule)
+    for r in wa.itertuples():
+        x = traces["inj00-astro-x1"][r.method]
+        if r.method in ("demix", "ring"):
+            ref = inj[inj.method == r.method].iloc[0]
+            assert (r.err_05hz, r.err_raw, r.gain, r.corr) == (ref["err_05hz"], ref["err_raw"], ref["gain"],
+                                                               ref["corr"])
+            continue
+        y = np.asarray(x, dtype=np.float64)
+        src = y - truth if r.method == "roi" else y - metrics.gain(x, truth) * truth
+        z = y - astrid.patch.baseline(src[None], FPS, rule)[0]
+        assert r.err_05hz == metrics.error(z, truth, FPS) and r.gain == metrics.gain(z, truth)
+        assert r.err_05hz != inj[inj.method == r.method].iloc[0].err_05hz
+    assert (wa.sbr == inj.sbr).all()                                       # the ratio is the case's, not the scoring's
+    with pytest.raises(ValueError, match="baseline"):
+        C.injection_scores(cases, fits, index, FPS, [res], "equal")
     leak = C.leakage_scores(cases, fits, index, FPS, [res])
-    assert list(leak.columns) == ["target", "scale", "method", "leak", "leak_05hz", "kept_corr"]
+    assert list(leak.columns) == ["target", "scale", "method", "leak", "leak_05hz", "kept_corr", "arr"]
+    y0_roi = traces["M-001-astro-x0"]["roi"]
+    assert (leak.arr == float(np.linalg.norm(astro - astro.mean()) / np.linalg.norm(y0_roi - y0_roi.mean()))).all()
     for r in leak.itertuples():
         y1, y0 = traces["M-001-astro-x1"][r.method], traces["M-001-astro-x0"][r.method]
         assert r.leak_05hz == metrics.leakage(y1, y0, astro, FPS, 0.5)

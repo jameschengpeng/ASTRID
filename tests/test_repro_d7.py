@@ -16,6 +16,7 @@ from scipy import ndimage as ndi
 
 pd = pytest.importorskip("pandas")
 
+import astrid  # noqa: E402
 from astrid.api import Movie  # noqa: E402
 from astrid.patch import BaselineRule, baseline, dilate  # noqa: E402
 
@@ -162,9 +163,9 @@ def test_rules() -> None:
     assert all(terr[r, c] for r, c in inside) and not any(near[r, c] for r, c in away)
     assert C.free_sites(loc, True) == []                  # D1's rule: 4 events and evidence, none here
     cases, ch = C.injection_cases(loc, dff, C.D7_RULES)
-    assert len(cases) == 2 * len(ch["sites"]) and ch["sites"][0][2] == "astro"
+    assert len(cases) == len(C.SCALES) * len(ch["sites"]) and ch["sites"][0][2] == "astro"
     leak, ch = C.leakage_cases(loc, dff, {REC: np.ones(160)}, 1, C.D7_RULES)
-    assert ch["targets"] == [3, 4] and ch["astro_source"] == "A-01" and len(leak) == 6
+    assert ch["targets"] == [3, 4] and ch["astro_source"] == "A-01" and len(leak) == 2 * len(C.LEAK_SCALES)
     assert (leak[1].astro.shape & (loc.neurons == 3)).sum() >= 0.5 * (loc.neurons == 3).sum()
 
 
@@ -191,8 +192,10 @@ def test_one_recording(tmp_path: Path) -> None:
         np.savez(results / f"{name}.npz", tuncat_raw_roi=movie[:, masks["target"]].mean(axis=1))
     assert D.main(["score", "--run", str(run), "--results", str(results)]) == 0
     index = json.loads((run / "compare" / "index.json").read_text())
-    inj, leak = stats.d7_injection_table(run, index), stats.d7_leakage_table(run, index)
+    tables = stats.d7_tables(root)
+    inj, leak = tables["injection"], tables["leakage"]
     assert set(inj.method) == set(stats.METHODS) and set(leak.method) == set(stats.METHODS)
+    assert set(inj.scale) == set(C.SCALES) and set(leak.scale) == set(C.SCALES)
     ok = inj[inj.status == "ok"]
     assert set(ok.method) == {"demix", "ring", "roi"}                      # the others missing: failures
     np.testing.assert_allclose(leak[leak.method == "roi"].leak, 1.0, atol=1e-5)   # 1 by construction (float32)
@@ -201,6 +204,16 @@ def test_one_recording(tmp_path: Path) -> None:
     truth = np.load(run / "compare" / f"{index[0]['spec']}.npz")["truth"]
     roi = np.load(results / f"{index[0]['spec']}.npz")["tuncat_raw_roi"]
     assert first.err_05hz == metrics.error(roi, truth, 22.7)               # scored at the location's rate
+    # the without_added scoring takes the raw ROI average's baseline from r - q under D7's own rule
+    assert D.main(["score", "--run", str(run), "--results", str(results), "--baseline", "without_added"]) == 0
+    wa = pd.read_csv(run / "scores_without_added" / "injection_scores.csv", float_precision="round_trip")
+    rule = astrid.Settings.from_dict(info["settings"]["injection"]).baseline_rule()
+    assert rule.window_s is None and rule.trend_pct_per_s != 0                       # the bleaching line
+    y = roi.astype(np.float64)
+    z = y - astrid.patch.baseline((y - truth)[None], 22.7, rule)[0]
+    second = wa[(wa.case == index[0]["spec"]) & (wa.method == "roi")].iloc[0]
+    assert second.err_05hz == metrics.error(z, truth, 22.7) and second.sbr == first.sbr
+    assert stats.d7(root, "without_added")["baseline"] == "without_added"
     split = stats.d7_error_split(run, [results])                          # Supplementary Equation S24
     assert len(split) == len(stats.SPLIT_METHODS) * sum(c["test"] == "injection" for c in index)
     np.testing.assert_allclose(split.err05 ** 2, split.gain_part + split.resid_part, rtol=1e-12)

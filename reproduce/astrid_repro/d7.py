@@ -35,13 +35,18 @@ in the leakage test). A recording without a ROI near its territory has no leakag
 has no leakage test.
 
 **Outputs** of one recording in ``<out>/<location>_<recording>/``, as ``astrid_repro.d1``'s (``cases.run_tests``):
-``run.json``, ``injection/``, ``leakage/``, ``compare/`` (the peers' cases) and ``scores/``, the layout that
-``python -m astrid_repro.stats d7 --root <out>`` reads.
+``run.json``, ``injection/``, ``leakage/``, ``compare/`` (the peers' cases) and ``scores/`` (and
+``scores_without_added/`` after ``score --baseline without_added``), the layout that
+``python -m astrid_repro.stats d7 --root <out> [--baseline without_added]`` reads.
 
 Run from ``reproduce/`` with one BLAS thread, as for D1:
     python -m astrid_repro.d7 run --data <inputs> --location D7_location1 --recording <recording> --out <root>
         [--tests injection leakage] [--workers 8]
     python -m astrid_repro.d7 score --run <root>/D7_location1_<recording> [--results <dir> ...]
+        [--baseline reported|without_added]
+With ``--baseline without_added`` (the paper's tables) the injection test is scored with every other trace's
+running baseline removed by the recording's rule (D7's bleaching line), taken from the trace without the added
+signal (``cases`` module docstring).
 """
 
 from __future__ import annotations
@@ -261,13 +266,15 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--run", type=Path, required=True)
     s.add_argument("--results", type=Path, nargs="+", default=None,
                    help="the peers' results folders (default <run>/compare/results)")
+    s.add_argument("--baseline", choices=C.BASELINES, default="reported",
+                   help="the injection test's scoring (without_added: the paper's tables; cases' docstring)")
     a = ap.parse_args(argv)
     if a.command == "run":
         for var in BLAS_THREADS:                       # one BLAS thread in each worker process
             os.environ[var] = "1"
         run_recording(a.data, a.location, a.recording, a.out, tests=a.tests, workers=a.workers)
     else:
-        C.score_run(a.run, None, a.results)
+        C.score_run(a.run, None, a.results, baseline=a.baseline)
     return 0
 
 

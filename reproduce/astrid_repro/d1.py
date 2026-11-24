@@ -41,7 +41,8 @@ must be D1's there. ``--variant`` runs one of the paper's ablations: I without a
   ``suite2p_runner cases``, with results in a folder of their own);
 - ``scores/``: ``injection_scores.csv`` and ``leakage_scores.csv`` (``cases.injection_scores``,
   ``cases.leakage_scores``), every method whose traces are there, and ``summary.txt``
-(``cases.run_tests``).
+(``cases.run_tests``); ``scores_without_added/``, the same with the injection test scored under the paper's
+``without_added`` baseline (``cases`` module docstring; ``score --baseline without_added``).
 
 Run from ``reproduce/`` with one BLAS thread (``OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1``
 exported, as in the paper's runs: the last digits of the fits and the scores depend on the BLAS's summation
@@ -49,12 +50,14 @@ order):
     python -m astrid_repro.d1 run --data <inputs> --location <location> --recording <recording> --out <root>
         [--tests injection leakage] [--workers 16] [--variant I|II|III [--cases <the full model's run>/compare]]
     python -m astrid_repro.d1 score --run <root>/<location>_<recording> [--results <dir> ...]
-    python -m astrid_repro.d1 pool --root <root> --out <scores>
+        [--baseline reported|without_added]
+    python -m astrid_repro.d1 pool --root <root> --out <scores> [--baseline reported|without_added]
 ``score`` scores again once the peer methods have run (``--results``: their results folders, e.g.
-``compare/results`` and Suite2p's, a later one's trace replacing an earlier one's; default ``compare/results``).
-``pool`` writes every recording's scores into ``injection_scores.csv`` and ``leakage_scores.csv`` with
-``location`` and ``recording``, the input of ``python -m astrid_repro.stats d1`` (and, for a variant's root, of
-``stats ablations``).
+``compare/results`` and Suite2p's, a later one's trace replacing an earlier one's; default ``compare/results``),
+into ``scores/`` or, with ``--baseline without_added`` (the paper's tables), ``scores_without_added/``.
+``pool`` writes every recording's scores of that scoring into ``injection_scores.csv`` and
+``leakage_scores.csv`` with ``location`` and ``recording``, the input of ``python -m astrid_repro.stats d1`` (and,
+for a variant's root, of ``stats ablations``, which reads ASTRID's rows only, the same in both scorings).
 """
 
 from __future__ import annotations
@@ -188,16 +191,18 @@ def run_recording(data: str | Path, location_name: str, recording: str, out: str
                        cases_dir=None if cases_dir is None else Path(cases_dir), log=log)
 
 
-def pool(root: str | Path, out: str | Path) -> dict[str, pd.DataFrame]:
-    """Every run folder's scores under ``root`` (a folder with ``run.json`` and ``scores``), concatenated in the
-    folders' name order with ``location`` and ``recording`` columns, written to ``out`` as
-    ``injection_scores.csv`` and ``leakage_scores.csv`` where there are such scores (the input of
-    ``stats.py d1``)."""
+def pool(root: str | Path, out: str | Path, baseline: str = "reported") -> dict[str, pd.DataFrame]:
+    """Every run folder's scores of ``baseline`` under ``root`` (a folder with ``run.json`` and
+    ``cases.SCORE_DIRS[baseline]``), concatenated in the folders' name order with ``location`` and ``recording``
+    columns, written to ``out`` as ``injection_scores.csv`` and ``leakage_scores.csv`` where there are such
+    scores (the input of ``stats.py d1``)."""
+    if baseline not in C.BASELINES:
+        raise ValueError(f"baseline must be one of {C.BASELINES}, got {baseline!r}")
     parts: dict[str, list[pd.DataFrame]] = {"injection": [], "leakage": []}
     for info_path in sorted(Path(root).glob("*/run.json")):
         info = json.loads(info_path.read_text(encoding="utf-8"))
         for test in parts:
-            p = info_path.parent / "scores" / f"{test}_scores.csv"
+            p = info_path.parent / C.SCORE_DIRS[baseline] / f"{test}_scores.csv"
             if p.exists():
                 parts[test].append(pd.read_csv(p).assign(location=info["location"], recording=info["recording"]))
     if not any(parts.values()):
@@ -229,9 +234,12 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--cases", type=Path, default=None, help="the export (default <run>/compare)")
     s.add_argument("--results", type=Path, nargs="+", default=None,
                    help="the peers' results folders (default <cases>/results)")
+    s.add_argument("--baseline", choices=C.BASELINES, default="reported",
+                   help="the injection test's scoring (without_added: the paper's tables; cases' docstring)")
     p = sub.add_parser("pool", help="pool every recording's scores for stats.py d1")
     p.add_argument("--root", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--baseline", choices=C.BASELINES, default="reported", help="the scoring to pool")
     a = ap.parse_args(argv)
     if a.command == "run":
         for var in BLAS_THREADS:                       # one BLAS thread in each worker process
@@ -239,9 +247,9 @@ def main(argv: list[str] | None = None) -> int:
         run_recording(a.data, a.location, a.recording, a.out, tests=a.tests, workers=a.workers, variant=a.variant,
                       cases_dir=a.cases)
     elif a.command == "score":
-        C.score_run(a.run, a.cases, a.results)
+        C.score_run(a.run, a.cases, a.results, baseline=a.baseline)
     else:
-        tables = pool(a.root, a.out)
+        tables = pool(a.root, a.out, a.baseline)
         print({k: len(v) for k, v in tables.items()}, "rows written to", a.out)
     return 0
 

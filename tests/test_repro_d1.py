@@ -82,7 +82,8 @@ def test_one_recording(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert info["choices"]["injection"]["sources"] == [2, 1] and info["choices"]["leakage"]["targets"] == [3]
     assert info["settings"]["leakage"]["max_iterations"] == 40
     names = info["cases"]["injection"] + info["cases"]["leakage"]
-    assert names[:2] == ["inj00-astro-x1", "inj00-astro-x3"] and info["cases"]["leakage"][0] == "M-003-astro-x0"
+    assert names[:2] == ["inj00-astro-x0.5", "inj00-astro-x1"] and info["cases"]["leakage"][0] == "M-003-astro-x0"
+    assert len(info["cases"]["injection"]) == 4 * 6 and len(info["cases"]["leakage"]) == 7   # 4 sites, 1 target
     fits = pd.read_csv(run / "injection" / "fits.csv")
     assert list(fits.case) == info["cases"]["injection"] and (fits.iterations <= 30).all()
     assert (pd.read_csv(run / "leakage" / "fits.csv").iterations <= 40).all()
@@ -91,22 +92,37 @@ def test_one_recording(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     inj = pd.read_csv(run / "scores" / "injection_scores.csv")
     leak = pd.read_csv(run / "scores" / "leakage_scores.csv")
     assert set(inj.method) == {"demix", "ring"} and len(inj) == 2 * len(info["cases"]["injection"])
-    assert set(leak.scale) == {1.0, 3.0} and set(leak.target) == {"M-003"}
+    assert set(leak.scale) == set(C.SCALES) and set(leak.target) == {"M-003"}
+    assert inj.sbr.isna().all() and leak.arr.isna().all()       # no raw ROI average yet: no ratio
     results = tmp_path / "peer_results"                        # a peer's traces: scored where present
     results.mkdir()
     for name in names:
         with np.load(run / ("injection" if name.startswith("inj") else "leakage") / f"{name}.npz") as z:
-            np.savez(results / f"{name}.npz", fissa=z["ring_trace"][0] * 0.5)
+            np.savez(results / f"{name}.npz", fissa=z["ring_trace"][0] * 0.5,
+                     tuncat_raw_roi=(z["ring_trace"][0] + 100).astype(np.float32))
     assert D.main(["score", "--run", str(run), "--results", str(results)]) == 0
     inj2 = pd.read_csv(run / "scores" / "injection_scores.csv")
-    assert list(inj2.method.unique()) == ["demix", "ring", "fissa"]
-    pd.testing.assert_frame_equal(inj2[inj2.method != "fissa"].reset_index(drop=True), inj)
+    assert list(inj2.method.unique()) == ["demix", "ring", "fissa", "roi"]
+    ours = inj2[inj2.method.isin(["demix", "ring"])].reset_index(drop=True)
+    pd.testing.assert_frame_equal(ours.drop(columns="sbr"), inj.drop(columns="sbr"))
+    assert inj2.sbr.notna().all()
+    assert D.main(["score", "--run", str(run), "--results", str(results), "--baseline", "without_added"]) == 0
+    wa = pd.read_csv(run / "scores_without_added" / "injection_scores.csv")
+    pd.testing.assert_frame_equal(wa[wa.method.isin(["demix", "ring"])].reset_index(drop=True), ours)
+    assert list(wa.method.unique()) == ["demix", "ring", "fissa", "roi"] and (wa.sbr == inj2.sbr).all()
+    pd.testing.assert_frame_equal(pd.read_csv(run / "scores_without_added" / "leakage_scores.csv"),
+                                  pd.read_csv(run / "scores" / "leakage_scores.csv"))   # the leakage: one scoring
     assert D.main(["pool", "--root", str(tmp_path / "out"), "--out", str(tmp_path / "pooled")]) == 0
     pooled = pd.read_csv(tmp_path / "pooled" / "injection_scores.csv")
-    need = {"location", "recording", "case", "site", "scale", "method", "err_05hz", "gain"}
+    need = {"location", "recording", "case", "site", "scale", "method", "err_05hz", "gain", "sbr"}
     assert need <= set(pooled.columns) and set(pooled.location) == {"toy_loc01"} and set(pooled.recording) == {REC}
     pooled = pd.read_csv(tmp_path / "pooled" / "leakage_scores.csv")
-    assert {"location", "recording", "target", "scale", "method", "leak", "kept_corr"} <= set(pooled.columns)
+    assert {"location", "recording", "target", "scale", "method", "leak", "kept_corr", "arr"} <= set(pooled.columns)
+    assert D.main(["pool", "--root", str(tmp_path / "out"), "--out", str(tmp_path / "pooled_wa"),
+                   "--baseline", "without_added"]) == 0
+    pooled_wa = pd.read_csv(tmp_path / "pooled_wa" / "injection_scores.csv")
+    pd.testing.assert_frame_equal(pooled_wa.drop(columns="location"), wa.assign(recording=REC),
+                                  check_exact=False, rtol=1e-14, atol=0)    # a CSV round trip apart
     # an ablation scored against the full model's export
     again = D.run_recording(tmp_path / "data", "toy_loc01", REC, tmp_path / "out_A", tests=["leakage"],
                             variant="I", cases_dir=run / "compare", config=cfg, log=lambda s: None)
