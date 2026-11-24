@@ -276,7 +276,7 @@ res = astrid.demix(movie, rois, fps=cfg["fps"], um_per_px=cfg["um_per_px"], terr
 `astrid_repro/figures` draws the data panels of the paper's figures from the outputs above, each with the values,
 examples, windows, marks and colors of the paper's figure, and saves each panel on its own
 (`<panel>_<dataset>_<part>.png` and `.svg`) with a record of what it shows (`.json`: the values drawn, the
-example and the numbers its legend prints). The schematics (Fig. 1A and 1D, Fig. 2, Figs. 3A and 4A, Supp. Fig.
+example and the numbers its legend prints). The schematics (Fig. 1A and 1B, Fig. 2, Figs. 3A and 4A, Supp. Fig.
 S2A) and the paper's typography, panel sizes and page layout are not part of it: the panels are drawn with
 matplotlib's defaults.
 Run from this folder:

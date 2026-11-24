@@ -2,7 +2,7 @@
 
 Each panel is drawn with the same values, examples, windows, marks and colors as in the paper, by matplotlib
 with its defaults, and saved on its own with a record of what it shows (``<panel>.json``). The schematic
-panels (Fig. 1A and 1D, Fig. 2, Figs. 3A and 4A, Supplementary Fig. S2A), the paper's typography, panel sizes
+panels (Fig. 1A and 1B, Fig. 2, Figs. 3A and 4A, Supplementary Fig. S2A), the paper's typography, panel sizes
 and page layout are not part of this code. The example of each example panel is chosen by the rule given in its module's
 docstring and in the Supplementary Section "Example panels".
 
