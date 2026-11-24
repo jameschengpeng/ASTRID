@@ -27,7 +27,7 @@ authors:
 preferred-citation:
   type: article
   status: in-preparation
-  title: "ASTRID: Astrocyte-informed demixing of calcium imaging signals"
+  title: "ASTRID: Astrocyte-informed demixing of neuronal calcium signals"
   authors:
     - given-names: James Cheng
       family-names: Peng
