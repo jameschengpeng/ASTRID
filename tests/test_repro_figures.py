@@ -287,7 +287,7 @@ def test_public_panels(tmp_path: Path) -> None:
     p = _public(tmp_path)
     made = public.panels("ABO", p["table"], archive=p["archive"], ours=p["ours"], peers=None, suite2p=p["suite2p"],
                          evaluator=toy_view)
-    assert [stem for stem, _, _ in made] == ["figS6a_D2_scores", "figS6b_D2_image", "figS6b_D2_traces"]
+    assert [stem for stem, _, _ in made] == ["figS6b_D2_scores", "figS6a_D2_image", "figS6a_D2_traces"]
     scores, image, traces = (rec for _, _, rec in made)
     table = public.read_table(p["table"], "ABO")
     f1 = np.asarray(table["values"]["ours"])

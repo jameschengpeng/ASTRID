@@ -298,8 +298,8 @@ The tables are those `tables_public` writes; the other paths are those given to 
 |---|---|---|
 | Fig. 5A | D3: the example recording's mean image and ROI, and each method's standardized trace over the predicted calcium, with the spikes | `cai1.example`, `cai1.draw_image`, `cai1.draw_traces` |
 | Fig. 5B | D3: each method's correlation with the spike-predicted calcium per cell, GCaMP6f and GCaMP6s cells marked, the Holm-corrected marks | `cai1.draw_scores` |
-| Supp. Fig. S6A, C, E | D2, D4, D5: each method's F1 per video, the Holm-corrected marks | `public.draw_scores` |
-| Supp. Fig. S6B, D, F | D2, D4, D5: the example video's mean image and ROI masks, and the example ROI's trace as the evaluation sees it, with the labeled or simulated transients and each method's detections | `public.example`, `public.draw_image`, `public.draw_traces` |
+| Supp. Fig. S6A, C, E | D2, D4, D5: the example video's mean image and ROI masks, and the example ROI's trace as the evaluation sees it, with the labeled or simulated transients and each method's detections | `public.example`, `public.draw_image`, `public.draw_traces` |
+| Supp. Fig. S6B, D, F | D2, D4, D5: each method's F1 per video, the Holm-corrected marks | `public.draw_scores` |
 | Figs. 1-4; Supp. Figs. S1-S5 | the pipeline, the benchmark's design, D1, D6, D7, and the simulations of Supp. Fig. S5 | not part of this code (made with the authors' in-house analysis code, available from James Cheng Peng on request) |
 
 **Example rules** (Supplementary Section "Example panels"; each module's docstring gives the rule in full):
@@ -307,6 +307,6 @@ The tables are those `tables_public` writes; the other paths are those given to 
 - Fig. 5A: the cell on which ASTRID's correlation is furthest above the best other method's, its recording on
   which ASTRID is furthest ahead, and the 30 s within the electrophysiology where the methods' standardized
   traces differ most.
-- Supp. Fig. S6B, D, F: the video with ASTRID's median F1; among its ROIs with at least 8 labeled or simulated
+- Supp. Fig. S6A, C, E: the video with ASTRID's median F1; among its ROIs with at least 8 labeled or simulated
   transients and an ASTRID F1 of at least 0.5, the ROI on which ASTRID's F1 is furthest above the best other
   method's; the 120 s (or the whole recording) with the most transients on which the methods disagree.
