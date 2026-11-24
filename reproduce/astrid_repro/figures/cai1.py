@@ -3,12 +3,12 @@ panel is drawn from the outputs of ``reproduce/``: the table (``cv_cai1.json``, 
 cai1``), the export every method read (one ``<recording>.h5`` per recording and its ``index.json``) and the
 traces every method gave (ASTRID's ``result.npz``, the peers', Suite2p's).
 
-- **Scores** (4A; ``draw_scores``): each method's correlation with the calcium predicted from the spikes, per
+- **Scores** (5A; ``draw_scores``): each method's correlation with the calcium predicted from the spikes, per
   cell (the mean over its recordings), at the setting chosen for the cell by leave-one-cell-out
   cross-validation, the mean as a bar, the cells imaged with GCaMP6f as circles and those with GCaMP6s as
   triangles, and above each method the mark of the Holm-corrected p of ASTRID against it over the cells,
   Holm over the five methods.
-- **Example** (4B; ``example``, ``draw_image``, ``draw_traces``): one recording of one cell. On the left, the
+- **Example** (5B; ``example``, ``draw_image``, ``draw_traces``): one recording of one cell. On the left, the
   mean over the scored frames of the registered, 4 x 4 binned movie the methods were run on, from its 1st to
   its 99.5th percentile, with the cell's hand-drawn ROI in yellow and a scale bar of about 10 um (the pixel
   size of D3, about 0.47 um per binned pixel, is an estimate). On the right, each method's demixed trace over
@@ -102,7 +102,7 @@ def indicators(export: str | Path) -> dict[str, str]:
 
 
 def draw_scores(ax: Any, table: dict[str, Any], indicator: dict[str, str]) -> dict[str, Any]:
-    """Panel 4A: each method's correlation per cell, with the mark of each comparison (module docstring)."""
+    """Panel 5A: each method's correlation per cell, with the mark of each comparison (module docstring)."""
     cells = table["cells"]
     counts = {ind: sum(indicator[c] == ind for c in cells) for ind in MARKERS}
     marks = {m: F.stars(float(t["p_holm"])) for m, t in table["tests"].items()}
@@ -213,7 +213,7 @@ def example(table: dict[str, Any], *, export: str | Path, ours: Sequence[str | P
 
 
 def draw_image(ax: Any, ex: dict[str, Any]) -> dict[str, Any]:
-    """The left part of panel 4B (module docstring)."""
+    """The left part of panel 5B (module docstring)."""
     img, roi = ex["image"], ex["roi"]
     lo, hi = np.percentile(img, [1, 99.5])
     ax.imshow(img, cmap="gray", vmin=lo, vmax=hi, interpolation="nearest")
@@ -232,7 +232,7 @@ def draw_image(ax: Any, ex: dict[str, Any]) -> dict[str, Any]:
 
 
 def draw_traces(fig: Any, ex: dict[str, Any]) -> dict[str, Any]:
-    """The right part of panel 4B (module docstring)."""
+    """The right part of panel 5B (module docstring)."""
     from matplotlib.lines import Line2D
 
     axes = fig.subplots(len(ORDER) + 1, 1, sharex=True, gridspec_kw={"height_ratios": [1] * len(ORDER) + [0.35]})
