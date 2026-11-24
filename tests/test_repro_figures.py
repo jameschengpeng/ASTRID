@@ -99,7 +99,7 @@ def _cai1(tmp_path: Path) -> dict[str, Any]:
 def test_cai1_panels(tmp_path: Path) -> None:
     p = _cai1(tmp_path)
     made = cai1.panels(p["table"], export=p["export"], ours=p["ours"], peers=p["peers"], suite2p=p["suite2p"])
-    assert [stem for stem, _, _ in made] == ["fig4a_D3_scores", "fig4b_D3_image", "fig4b_D3_traces"]
+    assert [stem for stem, _, _ in made] == ["fig5b_D3_scores", "fig5a_D3_image", "fig5a_D3_traces"]
     scores, traces = made[0][2], made[2][2]
     table = cai1.read_table(p["table"])
     margin = np.asarray(table["values"]["ours"]) - np.max([table["values"][m] for m in cai1.ORDER[1:]], axis=0)
@@ -116,7 +116,7 @@ def test_cai1_panels(tmp_path: Path) -> None:
                          str(p["ours"][0]), "--peers", str(p["peers"]), "--suite2p", str(p["suite2p"]),
                          "--out", str(out), "--formats", "png"]) == 0
     assert sorted(f.name for f in out.iterdir()) == sorted(
-        f"{s}.{x}" for s in ("fig4a_D3_scores", "fig4b_D3_image", "fig4b_D3_traces") for x in ("png", "json"))
+        f"{s}.{x}" for s in ("fig5b_D3_scores", "fig5a_D3_image", "fig5a_D3_traces") for x in ("png", "json"))
     bad = json.loads(p["table"].read_text(encoding="utf-8"))
     bad["table"]["stats"]["FISSA"]["p_holm"] = 0.5                   # not Holm's correction of the raw p
     (tmp_path / "bad.json").write_text(json.dumps(bad), encoding="utf-8")
@@ -176,7 +176,7 @@ def test_cai1_equal_baseline(tmp_path: Path) -> None:
     assert figures_main(["cai1", "--table", str(table), "--export", str(p["export"]), "--ours",
                          str(p["ours"][0]), "--peers", str(p["peers"]), "--cnmf-grid", str(grid), "--suite2p",
                          str(p["suite2p"]), "--out", str(out), "--formats", "png"]) == 0
-    assert json.loads((out / "fig4a_D3_scores.json").read_text(encoding="utf-8"))["scoring"] == T.EQUAL_BASELINE
+    assert json.loads((out / "fig5b_D3_scores.json").read_text(encoding="utf-8"))["scoring"] == T.EQUAL_BASELINE
 
 
 # ---- D2, D4, D5, with a toy scoring ----
