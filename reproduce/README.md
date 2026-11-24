@@ -25,15 +25,15 @@ A port or a change of GPL-2 code keeps its license, so these folders are kept ap
 | `astrid_repro/metrics.py` | the measures: the injection test's error (below 0.5 Hz), the leakage, the gain, the failure rule; the paired Wilcoxon signed-rank test and Holm's correction |
 | `astrid_repro/run.py` | ASTRID on D2–D5 as the paper ran it: every video at every setting of the dataset's grid (`python -m astrid_repro.run D2 --data <archive> --out <results>`) |
 | `astrid_repro/abo_crop.py` | D2's movies: the URLs of the ten public Allen movies and TUnCaT's crop of them (the first 20 % of frames, the central 200 × 200 pixels) |
-| `astrid_repro/cases.py`, `d1.py`, `d7.py`, `d6.py` | the tests of D1, D7 and D6 from documented input files: the injection and leakage cases of D1 and D7 (the known signals added to the movie), the one-color and neuronal movies of D6, ASTRID's fits, the export of the cases for the peer methods, the per-case scores |
+| `astrid_repro/cases.py`, `d1.py`, `d7.py`, `d6.py` | the tests of D1, D7 and D6 from documented input files: the injection and leakage cases of D1 and D7 (the known signals added to the movie at six amplitudes), the one-color and neuronal movies of D6, ASTRID's fits, the export of the cases for the peer methods, the per-case scores with their difficulty ratios |
 | `astrid_repro/peers.py` | FISSA, TUnCaT and TUnCaT + terr., CNMF and CNMF + terr. (CaImAn) on the exported cases of D1, D6 and D7, at the paper's settings |
 | `astrid_repro/cai1_peers.py` | FISSA, TUnCaT and CNMF (CaImAn) on the recordings of D3's export, at the paper's settings (CNMF also at each setting of its cross-validation grid) |
 | `astrid_repro/suite2p_runner.py` | Suite2p's neuropil subtraction on given masks: whole videos (D2, D4, D5), cai-1 (D3) and exported cases |
 | `astrid_repro/cai1_export.py`, `cai1_rois/` | D3: the export every method read, built from the CRCNS download (the frames placed on the processed traces' grid, rigid registration, 4 × 4 binning, the scored frames, the spike-predicted calcium), with the ROI of each cell, drawn by hand once, blind to all methods |
-| `astrid_repro/stats.py` | the tables of D1 (ASTRID against seven methods), the ablations, D6 (its per-recording scoring and table) and D7 (by recording and by location), D7's error split, the check of the units nested in mice |
-| `astrid_repro/runtime.py` | the runtime table (Supplementary Table S12), rebuilt from documented files of the per-unit times of the paper's runs; it measures nothing |
+| `astrid_repro/stats.py` | the tables of D1 and D7 (ASTRID against seven methods at each of the six amplitudes and over them; D7 also by location), the ablations, D6 (its per-recording scoring and table), D7's error split, the check of the units nested in mice |
+| `astrid_repro/runtime.py` | the runtime table (Supplementary Table S13), rebuilt from documented files of the per-unit times of the paper's runs; it measures nothing |
 | `astrid_repro/public_data.py`, `ring.py`, `cv.py`, `tables_public.py` | D2–D5: the readers of the public data and of their ground truth, the ring subtraction, the leave-one-out cross-validation over settings and detection thresholds, the tables |
-| `astrid_repro/figures/` | the data panels of the paper's figures, drawn from the outputs above: Figure 4 (`cai1.py`) and Supplementary Figure S6 (`public.py`, D2, D4 and D5), with the rules that chose their examples (section "Figures" below) |
+| `astrid_repro/figures/` | the data panels of the paper's figures, drawn from the outputs above: Figure 5 (`cai1.py`) and Supplementary Figure S6 (`public.py`, D2, D4 and D5), with the rules that chose their examples (section "Figures" below) |
 | `tuncat_peers/` (**GPL-2**) | FISSA, TUnCaT and CNMF on D2, D4 and D5 with the scripts of TUnCaT's paper-reproduction archive, staged with the paper's changes (CNMF at its published setting, one background component and AR(1), or at any setting of its cross-validation grid), and the record of those changes |
 | `tuncat_eval/` (**GPL-2**) | the F1 scorer of D2, D4 and D5: TUnCaT's transient detection and matching, the ground-truth transients of the NAOMi videos, the template filtering, the rule for CNMF results with removed components, and the same scoring ROI by ROI for the figures (`evaluation.view`) |
 | `../aqua2_settings/` | the AQuA2 settings that made the astrocyte territory of D1, D6 and D7 |
@@ -41,14 +41,17 @@ A port or a change of GPL-2 code keeps its license, so these folders are kept ap
 **Checked against the analysis code that produced the paper's results.**
 - ASTRID's traces are bitwise equal on a real case of every dataset type: the public datasets' route through
   `demix`, D1 with its evidence map, candidates and territory, D6's configuration, and D7 with its baseline.
-- From the saved per-case scores and traces, every number of the paper's tables is recomputed exactly: D1, the
-  ablations, D2–D5 with the cross-validation, D6 and D7.
+- From the saved per-case scores and traces, every number of the paper's tables is recomputed exactly: D1 and
+  D7 at the six amplitudes, the ablations, D2–D5 with the cross-validation, D6 and D7.
 - The builders of D1, D7 and D6, run from their input files, give the analysis code's cases, fits, exports and
-  scores bit for bit, on a recording of each (D7: three).
+  scores bit for bit, on a recording of each (D7: three). At the six amplitudes, the builders of D1 and D7 give
+  the cases and choices of the paper's runs on every recording.
 - The ROI detection gives the ROIs of the paper's D1 run.
-- The figure code draws Figure 4 and Supplementary Figure S6 with the values of the paper's figures: every point,
+- The figure code draws Figure 5 and Supplementary Figure S6 with the values of the paper's figures: every point,
   line, image, outline, band and text the paper's panels draw, compared one by one, and the examples, windows
   and scores that their legends print.
+- Not part of this code: the check of CNMF's settings on D1 (Supplementary Table S4), an in-sample sensitivity
+  check that reran CNMF at five further settings; and the figures of D1, D6 and D7 (section "Figures").
 
 ## The route, per dataset
 
@@ -159,9 +162,20 @@ were left out of the input of every method.
      recording runs into its own folder `<run>` = `<root>/<location>_<recording>`, with one BLAS thread
      (`OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1`), as in the paper's runs: the last digits of the
      fits depend on it.
-   - **D1 and D7:** the injection and leakage tests (`cases.py`). `run` builds the cases, adding the known
+   - **D1 and D7:** the injection and leakage tests (`cases.py`), each with the known signal added at six
+     amplitudes, 0.5, 1, 2, 3, 4 and 5 times its recorded amplitude. `run` builds the cases, adding the known
      signals to the movie, fits them, exports them for the peers (`<run>/compare`) and scores them by error and
-     leakage; `score` scores them again with the peers' results:
+     leakage; `score` scores them again with the peers' results. Each case carries its difficulty ratio, the
+     signal-to-background ratio of an injection or the astrocyte-to-ROI ratio of a leakage case.
+     The paper's tables score the injection test with the same baseline step for every trace
+     (`--baseline without_added`; `cases.py`'s docstring). ASTRID's and the ring subtraction's traces are F - F0,
+     with F0 taken from the movie before the signal was added. Every other trace has its own running baseline,
+     by ASTRID's rule on that dataset, removed, taken from the trace without the added signal: exactly for the
+     raw ROI average, from its trace minus its share of the added signal for the other methods. Without this step
+     (`--baseline reported`, the default) every other trace has only its mean removed. The leakage is the same
+     in both. The scores' last digits depend on the BLAS's threads, which set the order of its sums: the paper's
+     `without_added` scores were computed with the BLAS's default threads, D1's and D7's other scores with one
+     thread, as the fits; the tables are the same either way:
 
      ```bash
      python -m astrid_repro.d1 run --data <inputs> --location <location> --recording <recording> --out <root> \
@@ -169,18 +183,22 @@ were left out of the input of every method.
      python -m astrid_repro.peers launch --cases <run>/compare --methods fissa,tuncat,cnmf --runners 16
      python -I astrid_repro/suite2p_runner.py cases --cases <run>/compare --results <run>/suite2p --threads 8 \
          --out <run>/suite2p
-     python -m astrid_repro.d1 score --run <run> --results <run>/compare/results <run>/suite2p
-     python -m astrid_repro.d1 pool --root <root> --out <scores>
-     python -m astrid_repro.stats d1 --scores <scores> --out <tables>          # Table 2, Supplementary Table S6
+     python -m astrid_repro.d1 score --run <run> --results <run>/compare/results <run>/suite2p \
+         --baseline without_added
+     python -m astrid_repro.d1 pool --root <root> --out <scores> --baseline without_added
+     python -m astrid_repro.stats d1 --scores <scores> --out <tables>     # Table 2, Supplementary Tables S6, S7
      ```
 
-     The ablations I, II and III run each recording again with `d1 run --variant I|II|III --cases
-     <run>/compare` into a root of their own, pooled with `d1 pool`; then `stats ablations --full <scores>
-     --variant I=<scores I> II=<scores II> III=<scores III> --out <tables>` (Supplementary Table S10). D7 runs
-     the same with `astrid_repro.d7` (`--location D7_location1` or `D7_location2`), without `pool`:
-     `stats d7 --root <root> --out <tables>` (Supplementary Tables S8 and S9), and the error split of
-     Supplementary Equation S24 with `stats d7-split --root <root> --results compare/results <Suite2p's> --out
-     <tables>` (its Supplementary Section 5.3 values).
+     `stats d1` tests each measure over the six amplitudes (each imaging location's mean of its six scores) and
+     at each amplitude, with each amplitude's median difficulty ratio. The ablations I, II and III run each
+     recording again with `d1 run --variant I|II|III --cases <run>/compare` into a root of their own, pooled with
+     `d1 pool` (ASTRID's rows only are used, the same under both scorings); then `stats ablations --full <scores>
+     --variant I=<scores I> II=<scores II> III=<scores III> --out <tables>` (Supplementary Table S11). D7 runs
+     the same with `astrid_repro.d7` (`--location D7_location1` or `D7_location2`; `d7 score --baseline
+     without_added`), without `pool`: `stats d7 --root <root> --baseline without_added --out <tables>`
+     (Supplementary Tables S9 and S10), and the error split of Supplementary Equation S24 with `stats d7-split
+     --root <root> --results compare/results <Suite2p's> --out <tables>` (its Supplementary Section 5.3 values,
+     at three times the recorded amplitude, on the traces as the methods give them).
    - **D6:** the leakage of the real astrocyte channel. `d6 run` makes the one-color movie M (both channels)
      and the neuronal movie R from the two channels, fits and exports the cases on each (`<run>/M`, `<run>/R`),
      and the peers run on both exports. The scores are the leakage from M against R, below 5 Hz and below
@@ -197,7 +215,7 @@ were left out of the input of every method.
      python -I astrid_repro/suite2p_runner.py cases --cases <run>/M/compare --results <run>/M/suite2p \
          --threads 8 --out <run>/M/suite2p                                         # and the same for R
      python -m astrid_repro.stats d6-scores --run <run> --baseline equal            # each recording
-     python -m astrid_repro.stats d6 --root <root> --baseline equal --out <tables>  # Supplementary Table S7
+     python -m astrid_repro.stats d6 --root <root> --baseline equal --out <tables>  # Supplementary Table S8
      ```
    - **D2, D4 and D5:** the F1 score of transient detection with TUnCaT's evaluation (`tuncat_eval/`, GPL-2),
      handed to the MIT code at run time:
@@ -226,10 +244,11 @@ were left out of the input of every method.
    (`stats.py`, `tables_public.py`). The test is `metrics.wilcoxon_p`, zero differences dropped, with SciPy's
    default method in every table. The units of D1, D6 and D7 are nested in mice; the check of Supplementary
    Section 4.8 and Table S5 (per mouse, and on D1 a mixed model and a hierarchical bootstrap) runs on the
-   tables' records: `stats nesting --d1 <stats d1's folder> --d6 <d6.json> --d7 <d7.json> --out <tables>`
-   (the mixed model needs statsmodels, the extra `nesting`; the paper's check took D6's `--baseline
-   reported` record, and the equal scoring's gives the same per-mouse result).
-   The runtime table (Supplementary Table S12) is rebuilt from the times of the paper's runs, per dataset, unit and
+   tables' records, D1's and D7's error and leakage over the six amplitudes and D6's leakage in territory:
+   `stats nesting --d1 <stats d1's d1.json> --d6 <d6.json> --d7 <stats d7's d7.json> --out <tables>` (the mixed
+   model needs statsmodels, the extra `nesting`; the paper's check takes the records of the paper's tables: D1's
+   and D7's `--baseline without_added`, D6's `--baseline equal`).
+   The runtime table (Supplementary Table S13) is rebuilt from the times of the paper's runs, per dataset, unit and
    method, with the same tests: `python -m astrid_repro.runtime --times <folder> --out <tables>` (the input files
    are in its docstring). It does not time the methods.
 6. **Figures**: below.
@@ -257,13 +276,13 @@ res = astrid.demix(movie, rois, fps=cfg["fps"], um_per_px=cfg["um_per_px"], terr
 `astrid_repro/figures` draws the data panels of the paper's figures from the outputs above, each with the values,
 examples, windows, marks and colors of the paper's figure, and saves each panel on its own
 (`<panel>_<dataset>_<part>.png` and `.svg`) with a record of what it shows (`.json`: the values drawn, the
-example and the numbers its legend prints). The schematics (Fig. 1A and 1D, 2A, 3A, Supp. Fig. S2A) and the
-paper's typography, panel sizes and page layout are not part of it: the panels are drawn with matplotlib's
-defaults.
+example and the numbers its legend prints). The schematics (Fig. 1A and 1D, Fig. 2, Figs. 3A and 4A, Supp. Fig.
+S2A) and the paper's typography, panel sizes and page layout are not part of it: the panels are drawn with
+matplotlib's defaults.
 Run from this folder:
 
 ```bash
-# Figure 4 (D3): A, the correlation per cell; B, the example. The table sets the scoring: the paper's Figure 4
+# Figure 5 (D3): A, the correlation per cell; B, the example. The table sets the scoring: the paper's Figure 5
 # is drawn from the equal-baseline table (cv_cai1_equal_baseline.json), and cv_cai1.json draws the first scoring
 python -m astrid_repro.figures cai1 --table <tables>/cv_cai1_equal_baseline.json --export <D3 export> \
     --ours <root> [...] --peers <folder> --cnmf-grid <grid> --suite2p <root> --out <figures>
@@ -277,15 +296,15 @@ The tables are those `tables_public` writes; the other paths are those given to 
 
 | Paper panel | Shows | Code |
 |---|---|---|
-| Fig. 4A | D3: each method's correlation with the spike-predicted calcium per cell, GCaMP6f and GCaMP6s cells marked, the Holm-corrected marks | `cai1.draw_scores` |
-| Fig. 4B | D3: the example recording's mean image and ROI, and each method's standardized trace over the predicted calcium, with the spikes | `cai1.example`, `cai1.draw_image`, `cai1.draw_traces` |
+| Fig. 5A | D3: each method's correlation with the spike-predicted calcium per cell, GCaMP6f and GCaMP6s cells marked, the Holm-corrected marks | `cai1.draw_scores` |
+| Fig. 5B | D3: the example recording's mean image and ROI, and each method's standardized trace over the predicted calcium, with the spikes | `cai1.example`, `cai1.draw_image`, `cai1.draw_traces` |
 | Supp. Fig. S6A, C, E | D2, D4, D5: each method's F1 per video, the Holm-corrected marks | `public.draw_scores` |
 | Supp. Fig. S6B, D, F | D2, D4, D5: the example video's mean image and ROI masks, and the example ROI's trace as the evaluation sees it, with the labeled or simulated transients and each method's detections | `public.example`, `public.draw_image`, `public.draw_traces` |
-| Figs. 1-3; Supp. Figs. S1-S5 | D1, D6, D7, and the simulations of Supp. Fig. S5 | not part of this code (made with the authors' in-house analysis code, available from James Cheng Peng on request) |
+| Figs. 1-4; Supp. Figs. S1-S5 | the pipeline, the benchmark's design, D1, D6, D7, and the simulations of Supp. Fig. S5 | not part of this code (made with the authors' in-house analysis code, available from James Cheng Peng on request) |
 
 **Example rules** (Supplementary Section "Example panels"; each module's docstring gives the rule in full):
 
-- Fig. 4B: the cell on which ASTRID's correlation is furthest above the best other method's, its recording on
+- Fig. 5B: the cell on which ASTRID's correlation is furthest above the best other method's, its recording on
   which ASTRID is furthest ahead, and the 30 s within the electrophysiology where the methods' standardized
   traces differ most.
 - Supp. Fig. S6B, D, F: the video with ASTRID's median F1; among its ROIs with at least 8 labeled or simulated

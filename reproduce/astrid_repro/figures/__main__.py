@@ -7,7 +7,7 @@ with its record (``.json``):
         --ours <root> [...] --peers <root> [...] --cnmf-grid <grid> --suite2p <root>
         --evaluator tuncat_eval.evaluation:view --cnmf-fill tuncat_eval.evaluation:cnmf_fill --out <folder>
 
-Run from ``reproduce/`` (so that ``astrid_repro`` and ``tuncat_eval`` import). ``cai1`` draws Figure 4 (A, B);
+Run from ``reproduce/`` (so that ``astrid_repro`` and ``tuncat_eval`` import). ``cai1`` draws Figure 5 (A, B);
 ``public`` draws one row of the supplementary figure of D2, D4 and D5: D2 (``ABO``: A, B), D4 (``NAOMi``: C,
 D) or D5 (``1p``: E, F). Paths are those given to ``tables_public`` (the tables are its outputs).
 """
@@ -23,9 +23,9 @@ import matplotlib
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
-    c = sub.add_parser("cai1", help="Figure 4 (D3)")
+    c = sub.add_parser("cai1", help="Figure 5 (D3)")
     c.add_argument("--table", type=Path, required=True, help="cv_cai1_equal_baseline.json (tables_public cai1 "
-                   "--baseline equal, the paper's Figure 4) or cv_cai1.json (as reported)")
+                   "--baseline equal, the paper's Figure 5) or cv_cai1.json (as reported)")
     c.add_argument("--export", type=Path, required=True, help="the D3 export (index.json, <recording>.h5)")
     c.add_argument("--ours", type=Path, nargs="+", required=True, help="ASTRID's result roots")
     c.add_argument("--peers", type=Path, required=True, help="the peers' traces (<recording>.npz)")

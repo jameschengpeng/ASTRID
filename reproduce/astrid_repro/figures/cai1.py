@@ -1,4 +1,4 @@
-"""Figure 4: D3, the CRCNS cai-1 dataset, where each imaged neuron's spikes were recorded electrically. Every
+"""Figure 5: D3, the CRCNS cai-1 dataset, where each imaged neuron's spikes were recorded electrically. Every
 panel is drawn from the outputs of ``reproduce/``: the table (``cv_cai1.json``, written by ``tables_public
 cai1``), the export every method read (one ``<recording>.h5`` per recording and its ``index.json``) and the
 traces every method gave (ASTRID's ``result.npz``, the peers', Suite2p's).
@@ -27,7 +27,7 @@ and method, and Ring's and Suite2p's per-recording correlations too.
 **The scoring** is the table's. ``tables_public cai1`` writes D3's two (its module docstring): as reported
 (``cv_cai1.json``), ASTRID's ΔF/F0 against every other trace with only its mean removed, and with the same
 running baseline removed from every trace (``--baseline equal``, ``cv_cai1_equal_baseline.json``, whose
-``table["baseline"]`` is the note ``tables_public.EQUAL_BASELINE``), the scoring the paper's Figure 4 shows.
+``table["baseline"]`` is the note ``tables_public.EQUAL_BASELINE``), the scoring the paper's Figure 5 shows.
 Given the equal table, every trace but ASTRID's is scored and drawn after its own running baseline is removed
 under ASTRID's rule (``public_data.minus_baseline`` at the recording's frame rate), so the correlations
 recomputed here, the example the rule picks and the traces drawn are those of that scoring.
@@ -281,7 +281,7 @@ def draw_traces(fig: Any, ex: dict[str, Any]) -> dict[str, Any]:
 
 def panels(table_path: str | Path, *, export: str | Path, ours: Sequence[str | Path], peers: str | Path | None,
            suite2p: str | Path, cnmf_grid: str | Path | None = None) -> list[F.Panel]:
-    """Figure 4: (file stem, figure, record) for the scores, the example's image and the example's traces;
+    """Figure 5: (file stem, figure, record) for the scores, the example's image and the example's traces;
     ``cnmf_grid`` as given to ``tables_public cai1``."""
     import matplotlib.pyplot as plt
 

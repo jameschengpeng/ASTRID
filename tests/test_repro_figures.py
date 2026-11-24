@@ -1,4 +1,4 @@
-"""The figure code on small synthetic data: the shared plot of the scores, Figure 4's panels (D3) from a table,
+"""The figure code on small synthetic data: the shared plot of the scores, Figure 5's panels (D3) from a table,
 an export and traces made here, and one row of the supplementary figure of D2, D4 and D5 with a toy scoring in
 place of TUnCaT's evaluation (which is GPL-2 and tested in its own folder)."""
 

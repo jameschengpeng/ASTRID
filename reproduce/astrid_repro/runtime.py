@@ -1,4 +1,4 @@
-"""The runtime table (Supplementary Table S12), rebuilt from each dataset's per-unit times. It does not measure
+"""The runtime table (Supplementary Table S13), rebuilt from each dataset's per-unit times. It does not measure
 times: the times are those of the paper's runs (Supplementary Section 4.7: every method by its own timer, reading
 the movie from disk not counted except within CNMF's timer, on the hardware described there), given as input files.
 
@@ -95,7 +95,7 @@ def fmt_p(p: float) -> str:
 
 def markdown(record: dict[str, Any]) -> str:
     cols = list(record)
-    lines = ["# Runtime in seconds per video (Supplementary Table S12)", "",
+    lines = ["# Runtime in seconds per video (Supplementary Table S13)", "",
              "Mean ± SD over the units of each dataset (the time of a cell or an imaging location is the mean over "
              "its recordings). Below each other method: the units where ASTRID is faster and the Holm-corrected p "
              "of a paired two-sided Wilcoxon signed-rank test against ASTRID. The fastest method is in bold. Rebuilt "

@@ -104,9 +104,10 @@ def test_d1_levels_curves_and_holm_over_seven() -> None:
     g = sec["gain deviation x1"]["stats"]["cnmf"]
     assert g["p"] == wilcoxon(d).pvalue and g["wins"] == int((d < 0).sum())
     k = sec["kept correlation x1"]
-    assert k["better"] == "higher" and k["stats"]["fissa"]["wins"] == k["stats"]["fissa"]["n"] and k["ratio"]["name"] == "arr"
+    assert k["better"] == "higher" and k["ratio"]["name"] == "arr"
+    assert k["stats"]["fissa"]["wins"] == k["stats"]["fissa"]["n"]
     a = sec["error, astrocyte sites x2"]
-    assert a["cases"] == [4] * 8 and a["ratio"]["cases"] == 8 * 4          # the sites j = 0 and 2, two recordings
+    assert a["cases"] == [4] * 8 and a["ratio"]["cases"] == 8 * 4          # sites 0 and 2, two recordings
     assert sec["low gain"]["x1"]["demix"] == 6 and sec["low gain"]["x1"]["cases"] == 8 * 6
     assert sec["low gain"]["x2"]["demix"] == 0
     text = stats.d1_markdown(rec)

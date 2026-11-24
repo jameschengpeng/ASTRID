@@ -30,7 +30,7 @@ METHODS: dict[str, tuple[str, str]] = {
 }
 LONG = {"ours": "ASTRID", "TUnCaT": "TUnCaT", "FISSA": "FISSA", "CNMF": "CNMF", "ring": "the ring subtraction",
         "suite2p": "Suite2p"}
-# the methods of the public datasets' figures (Fig. 4 and the supplementary figure of D2, D4 and D5), in their order
+# the methods of the public datasets' figures (Fig. 5 and the supplementary figure of D2, D4 and D5), in their order
 PUBLIC_ORDER = ("ours", "TUnCaT", "FISSA", "CNMF", "ring", "suite2p")
 # each comparison's name in the tables' tests, and the Holm family of D2-D5 (five comparisons)
 TEST_KEYS = {"TUnCaT": "TUnCaT", "FISSA": "FISSA", "CNMF": "CNMF", "ring": "Ring", "suite2p": "Suite2p"}
