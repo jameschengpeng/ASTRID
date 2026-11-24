@@ -35,7 +35,7 @@ PUBLIC_ORDER = ("ours", "TUnCaT", "FISSA", "CNMF", "ring", "suite2p")
 # each comparison's name in the tables' tests, and the Holm family of D2-D5 (five comparisons)
 TEST_KEYS = {"TUnCaT": "TUnCaT", "FISSA": "FISSA", "CNMF": "CNMF", "ring": "Ring", "suite2p": "Suite2p"}
 PUBLIC_FAMILY = ("TUnCaT", "FISSA", "CNMF", "Ring", "Suite2p")
-EXAMPLE_COLOR = "#F0E442"            # the example ROI's outline, Okabe-Ito yellow on the gray image
+EXAMPLE_COLOR = "#A89200"            # the example ROI's outline, a dark yellow on the gray image
 UNIT_LINE = "#D0D0D0"                # the gray lines joining a unit's dots
 
 
