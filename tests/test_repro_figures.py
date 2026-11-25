@@ -120,7 +120,7 @@ def test_cai1_panels(tmp_path: Path) -> None:
     assert made[2][1].legends[0].get_title().get_text().replace("\n", " ") == typical["line"]
     assert [t.get_text() for t in made[1][1].texts] == ["D3 (CRCNS cai-1,\ntwo-photon with\nelectrophysiology)"]
     assert [t.get_text() for t in made[0][1].texts] == [scores["note"]] == \
-        ["No “+ terr.” variants (no astrocyte territory in D3)"]
+        ["No “+ terr.” variants (no astrocyte territory in D3)\nSame inputs and scoring for every method (Fig. 2)"]
     for _, fig, _ in made:
         plt.close(fig)
     out = tmp_path / "figs"

@@ -45,6 +45,9 @@ DESCRIPTORS = {"D2": "Allen Brain Observatory, two-photon", "D3": "CRCNS cai-1, 
 # The note under the scores of a public dataset: the paper's figures of D1 add TUnCaT and CNMF given the
 # astrocyte territory ("+ terr."), which these datasets do not have (their labels are neurons only)
 NO_TERRITORY = "No “+ terr.” variants (no astrocyte territory in {name})"
+# The note under the scores of Figure 5 (D3), below the one above: every method had the same inputs and scoring,
+# as the paper's Figure 2 lays out
+FAIR_NOTE = "Same inputs and scoring for every method (Fig. 2)"
 
 
 def image_name(dataset: str) -> str:

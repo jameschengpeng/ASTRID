@@ -7,8 +7,9 @@ traces every method gave (ASTRID's ``result.npz``, the peers', Suite2p's).
   cell (the mean over its recordings), at the setting chosen for the cell by leave-one-cell-out
   cross-validation, the mean as a bar, the cells imaged with GCaMP6f as circles and those with GCaMP6s as
   triangles, and above each method the mark of the Holm-corrected p of ASTRID against it over the cells,
-  Holm over the five methods. A note under the axis says why the "+ terr." variants of the paper's D1
-  figures are missing (``common.NO_TERRITORY``).
+  Holm over the five methods. Two notes under the axis say why the "+ terr." variants of the paper's D1
+  figures are missing (``common.NO_TERRITORY``) and that every method had the same inputs and scoring
+  (``common.FAIR_NOTE``).
 - **Example** (5A; ``example``, ``draw_image``, ``draw_traces``): one recording of one cell. On the left, the
   mean over the scored frames of the registered, 4 x 4 binned movie the methods were run on, from its 1st to
   its 99.5th percentile, with the cell's hand-drawn ROI in yellow and a scale bar of about 10 um (the pixel
@@ -115,7 +116,7 @@ def draw_scores(ax: Any, table: dict[str, Any], indicator: dict[str, str]) -> di
                           "Correlation with spike-predicted\ncalcium (higher is better)",
                           f"{NAME}, {len(cells)} cells", markers=[MARKERS[indicator[c]] for c in cells],
                           marker_labels={m: f"{ind} ({counts[ind]})" for ind, m in MARKERS.items()})
-    note = F.NO_TERRITORY.format(name="D3")
+    note = F.NO_TERRITORY.format(name="D3") + "\n" + F.FAIR_NOTE
     ax.figure.supxlabel(note)                      # under the axis's label
     equal = table["baseline"] == "equal"
     return {"dataset": "D3", "measure": "Pearson r with the spike-predicted calcium, each cell's mean over its "
