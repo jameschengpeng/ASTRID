@@ -282,7 +282,7 @@ matplotlib's defaults.
 Run from this folder:
 
 ```bash
-# Figure 5 (D3): A, the correlation per cell; B, the example. The table sets the scoring: the paper's Figure 5
+# Figure 5 (D3): A, the example; B, the correlation per cell. The table sets the scoring: the paper's Figure 5
 # is drawn from the equal-baseline table (cv_cai1_equal_baseline.json), and cv_cai1.json draws the first scoring
 python -m astrid_repro.figures cai1 --table <tables>/cv_cai1_equal_baseline.json --export <D3 export> \
     --ours <root> [...] --peers <folder> --cnmf-grid <grid> --suite2p <root> --out <figures>
@@ -296,7 +296,7 @@ The tables are those `tables_public` writes; the other paths are those given to 
 
 | Paper panel | Shows | Code |
 |---|---|---|
-| Fig. 5A | D3: the example recording's mean image and ROI, and each method's standardized trace over the predicted calcium, with the spikes | `cai1.example`, `cai1.draw_image`, `cai1.draw_traces` |
+| Fig. 5A | D3: the example recording's mean image and ROI, and each method's standardized trace over the predicted calcium, with the spikes and how typical the example is (the cells on which ASTRID's correlation is higher than each other method's) | `cai1.example`, `cai1.draw_image`, `cai1.draw_traces`, `cai1.typicality` |
 | Fig. 5B | D3: each method's correlation with the spike-predicted calcium per cell, GCaMP6f and GCaMP6s cells marked, the Holm-corrected marks | `cai1.draw_scores` |
 | Supp. Fig. S6A, C, E | D2, D4, D5: the example video's mean image and ROI masks, and the example ROI's trace as the evaluation sees it, with the labeled or simulated transients and each method's detections | `public.example`, `public.draw_image`, `public.draw_traces` |
 | Supp. Fig. S6B, D, F | D2, D4, D5: each method's F1 per video, the Holm-corrected marks | `public.draw_scores` |

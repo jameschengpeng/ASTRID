@@ -7,13 +7,17 @@ traces every method gave (ASTRID's ``result.npz``, the peers', Suite2p's).
   cell (the mean over its recordings), at the setting chosen for the cell by leave-one-cell-out
   cross-validation, the mean as a bar, the cells imaged with GCaMP6f as circles and those with GCaMP6s as
   triangles, and above each method the mark of the Holm-corrected p of ASTRID against it over the cells,
-  Holm over the five methods.
+  Holm over the five methods. A note under the axis says why the "+ terr." variants of the paper's D1
+  figures are missing (``common.NO_TERRITORY``).
 - **Example** (5A; ``example``, ``draw_image``, ``draw_traces``): one recording of one cell. On the left, the
   mean over the scored frames of the registered, 4 x 4 binned movie the methods were run on, from its 1st to
   its 99.5th percentile, with the cell's hand-drawn ROI in yellow and a scale bar of about 10 um (the pixel
-  size of D3, about 0.47 um per binned pixel, is an estimate). On the right, each method's demixed trace over
-  the predicted calcium, both standardized to mean 0 and SD 1 over the recording's scored frames (missing
-  frames left as gaps), the spikes below, and the recording's correlation on the right.
+  size of D3, about 0.47 um per binned pixel, is an estimate), the dataset named below with its descriptor
+  (``common.image_name``). On the right, each method's demixed trace over the predicted calcium, both
+  standardized to mean 0 and SD 1 over the recording's scored frames (missing frames left as gaps), the spikes
+  below, and the recording's correlation on the right. The key's title says how typical the example is: the
+  fewest and the most cells, over the five other methods, on which ASTRID's correlation is higher than that
+  method's (``typicality``).
 
 **The example rule** (Supplementary Section "Example panels"). The cell is the one on which ASTRID's
 correlation is furthest above the best other method's, and its recording the one of that cell on which
@@ -39,6 +43,7 @@ recomputed here, the example the rule picks and the traces drawn are those of th
 from __future__ import annotations
 
 import json
+import textwrap
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -110,6 +115,8 @@ def draw_scores(ax: Any, table: dict[str, Any], indicator: dict[str, str]) -> di
                           "Correlation with spike-predicted\ncalcium (higher is better)",
                           f"{NAME}, {len(cells)} cells", markers=[MARKERS[indicator[c]] for c in cells],
                           marker_labels={m: f"{ind} ({counts[ind]})" for ind, m in MARKERS.items()})
+    note = F.NO_TERRITORY.format(name="D3")
+    ax.figure.supxlabel(note)                      # under the axis's label
     equal = table["baseline"] == "equal"
     return {"dataset": "D3", "measure": "Pearson r with the spike-predicted calcium, each cell's mean over its "
             "recordings, at the setting chosen by leave-one-cell-out cross-validation"
@@ -118,7 +125,22 @@ def draw_scores(ax: Any, table: dict[str, Any], indicator: dict[str, str]) -> di
             "its mean removed", "cells": cells,
             "indicators": {c: indicator[c] for c in cells}, **shown,
             "p_holm": {m: float(t["p_holm"]) for m, t in table["tests"].items()},
-            "holm_family": list(F.PUBLIC_FAMILY)}
+            "holm_family": list(F.PUBLIC_FAMILY), "note": note}
+
+
+def typicality(table: dict[str, Any]) -> dict[str, Any]:
+    """How typical the example is, the line under its traces: the cells on which ASTRID's correlation is higher
+    than each other method's (strictly), and the fewest and the most of these over the five methods, "ASTRID's
+    correlation was higher than each other method's for 13 to 18 of the 20 cells." These are the cells each
+    test of the table counts for ASTRID."""
+    r = {m: np.asarray(table["values"][m], dtype=float) for m in ORDER}
+    if not all(np.isfinite(v).all() for v in r.values()):
+        raise ValueError("D3: a method has no correlation for a cell")
+    wins = {m: int((r["ours"] > r[m]).sum()) for m in ORDER[1:]}
+    n = len(table["cells"])
+    line = (f"ASTRID's correlation was higher than each other method's for {min(wins.values())} to "
+            f"{max(wins.values())} of the {n} cells.")
+    return {"cells": n, "wins": wins, "line": line}
 
 
 # ---- the example ----
@@ -209,7 +231,8 @@ def example(table: dict[str, Any], *, export: str | Path, ours: Sequence[str | P
             "window": (start, start + w), "r": {m: recs[m][rec] for m in ORDER},
             "cell_r": {m: float(r[m][j]) for m in ORDER}, "margin": float(margin[j]), "rec_margin": rec_margin,
             "settings": {m: settings[m][j] for m in ORDER},
-            "best_other": max(ORDER[1:], key=lambda m: r[m][j]), "baseline": baseline}
+            "best_other": max(ORDER[1:], key=lambda m: r[m][j]), "baseline": baseline,
+            "typicality": typicality(table)}
 
 
 def draw_image(ax: Any, ex: dict[str, Any]) -> dict[str, Any]:
@@ -265,8 +288,11 @@ def draw_traces(fig: Any, ex: dict[str, Any]) -> dict[str, Any]:
     F.column_footer(axes[-2], "r", style="italic")
     key = [Line2D([], [], color=PREDICTED, lw=1.0, label="Spike-predicted calcium"),
            Line2D([], [], color="#606060", lw=1.0, label="Demixed trace, in the method's color")]
-    fig.legend(handles=key, loc="outside lower center", ncols=1, frameon=False)
+    typical = ex["typicality"]                    # how typical the example is, as the key's title
+    fig.legend(handles=key, loc="outside lower center", ncols=1, frameon=False,
+               title=textwrap.fill(typical["line"], 56, break_on_hyphens=False))
     return {"dataset": "D3", "cell": ex["cell"], "recording": ex["name"], "indicator": ex["indicator"],
+            "typicality": typical,
             "best other method": ex["best_other"], "ASTRID's r above the best other method's (cell)": ex["margin"],
             "ASTRID's r above the best other method's (each recording of the cell)": ex["rec_margin"],
             "window (frames)": list(ex["window"]),
@@ -290,7 +316,7 @@ def panels(table_path: str | Path, *, export: str | Path, ours: Sequence[str | P
     out = [(f"{PANELS[0]}_D3_scores", fig, draw_scores(ax, table, indicators(export)))]
     ex = example(table, export=export, ours=ours, peers=peers, suite2p=suite2p, cnmf_grid=cnmf_grid)
     fig, ax = plt.subplots(figsize=(3.2, 3.4), layout="constrained")
-    fig.supxlabel(NAME)
+    fig.supxlabel(F.image_name("D3"))
     out.append((f"{PANELS[1]}_D3_image", fig, draw_image(ax, ex)))
     fig = plt.figure(figsize=(7.0, 5.6), layout="constrained")
     out.append((f"{PANELS[1]}_D3_traces", fig, draw_traces(fig, ex)))

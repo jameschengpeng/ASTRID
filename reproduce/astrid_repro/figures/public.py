@@ -5,9 +5,12 @@ table of the dataset (``cv_<dataset>.json``, written by ``tables_public public``
 
 - **Scores** (panels B, D and F; ``draw_scores``): each method's F1 per video, at the setting and threshold chosen for
   that video by leave-one-video-out cross-validation, the mean as a bar, and above each method the mark of the
-  Holm-corrected p of ASTRID against it over the videos, Holm over the five methods.
+  Holm-corrected p of ASTRID against it over the videos, Holm over the five methods. The y axis names the
+  reference, the labeled (D2, D5) or simulated (D4) transients, and a note under the axis says why the "+ terr."
+  variants of the paper's D1 figures are missing (``common.NO_TERRITORY``).
 - **Example** (panels A, C and E; ``example``, ``draw_image``, ``draw_traces``): the mean image of one video, every
-  ROI mask in white and the example ROI in yellow, and the example ROI with one row per method: its trace as
+  ROI mask in white and the example ROI in yellow, the dataset named below with its descriptor
+  (``common.image_name``), and the example ROI with one row per method: its trace as
   the evaluation sees it (template-filtered, in noise SDs above its baseline), the method's threshold, the
   labeled (D2, D5) or simulated (D4) transients, and the transients the method detected (matched or false),
   with the ROI's F1 on the right.
@@ -90,12 +93,15 @@ def read_table(path: str | Path, dataset: str) -> dict[str, Any]:
 def draw_scores(ax: Any, dataset: str, table: dict[str, Any]) -> dict[str, Any]:
     """Panel B, D or F: each method's F1 per video, with the mark of each comparison (module docstring)."""
     marks = {m: F.stars(float(t["p_holm"])) for m, t in table["tests"].items()}
-    shown = F.paired_dots(ax, table["values"], ORDER, marks, "F1 score (higher is better)",
+    kind = "simulated" if dataset == "NAOMi" else "labeled"
+    shown = F.paired_dots(ax, table["values"], ORDER, marks, f"F1 score against {kind}\ntransients (higher is better)",
                           f"{name_of(dataset)}, {len(table['videos'])} videos")
+    note = F.NO_TERRITORY.format(name=D.PAPER_NAMES[dataset])
+    ax.figure.supxlabel(note)                      # under the axis's label
     return {"dataset": D.PAPER_NAMES[dataset], "measure": "F1 of transient detection per video, at the "
             "cross-validated setting and threshold", "videos": table["videos"], **shown,
             "p_holm": {m: float(t["p_holm"]) for m, t in table["tests"].items()},
-            "holm_family": list(F.PUBLIC_FAMILY)}
+            "holm_family": list(F.PUBLIC_FAMILY), "note": note}
 
 
 # ---- the example ----
@@ -301,7 +307,7 @@ def panels(dataset: str, table_path: str | Path, *, archive: str | Path, ours: S
     ex = example(dataset, table, archive=archive, ours=ours, peers=peers, suite2p=suite2p, evaluator=evaluator,
                  cnmf_fill=cnmf_fill, cnmf_grid=cnmf_grid)
     fig, ax = plt.subplots(figsize=(3.2, 3.4), layout="constrained")
-    fig.supxlabel(name_of(dataset))
+    fig.supxlabel(F.image_name(tag))
     out.append((f"{example_panel}_{tag}_image", fig, draw_image(ax, ex, mean_image(ex["movie"]))))
     fig = plt.figure(figsize=(7.0, 5.6), layout="constrained")
     out.append((f"{example_panel}_{tag}_traces", fig, draw_traces(fig, ex)))

@@ -109,6 +109,18 @@ def test_cai1_panels(tmp_path: Path) -> None:
     assert e - s == 30 and 2.0 <= traces["window (s)"][0] and traces["window (s)"][1] <= 86.0
     assert set(scores["indicators"].values()) == {"GCaMP6f", "GCaMP6s"} and len(scores["cells"]) == 5
     assert [r["method"] for r in traces["rows"]] == list(cai1.ORDER)
+    # the reading aids: the dataset's descriptor under the image, the note under the scores, and how typical the
+    # example is under the traces (the cells each test counts for ASTRID)
+    wins = {m: int(sum(a > b for a, b in zip(table["values"]["ours"], table["values"][m], strict=True)))
+            for m in cai1.ORDER[1:]}
+    typical = traces["typicality"]
+    assert typical["wins"] == wins and typical["cells"] == 5
+    assert typical["line"] == (f"ASTRID's correlation was higher than each other method's for {min(wins.values())} "
+                               f"to {max(wins.values())} of the 5 cells.")
+    assert made[2][1].legends[0].get_title().get_text().replace("\n", " ") == typical["line"]
+    assert [t.get_text() for t in made[1][1].texts] == ["D3 (CRCNS cai-1,\ntwo-photon with\nelectrophysiology)"]
+    assert [t.get_text() for t in made[0][1].texts] == [scores["note"]] == \
+        ["No “+ terr.” variants (no astrocyte territory in D3)"]
     for _, fig, _ in made:
         plt.close(fig)
     out = tmp_path / "figs"
@@ -302,6 +314,11 @@ def test_public_panels(tmp_path: Path) -> None:
     assert e - s == 3600 and traces["whole recording"] is False       # 120 s at 30 frames per second
     assert image["scale bar (um)"] == 20 and image["ROIs"] == 3        # 30 px at 0.785 um: under 120 um
     assert scores["videos"] == list(p["videos"]) and set(scores["marks"]) == set(public.ORDER[1:])
+    # the reading aids: the y axis names its reference, a note under the scores, the descriptor under the image
+    assert made[0][1].axes[0].get_ylabel() == "F1 score against labeled\ntransients (higher is better)"
+    assert [t.get_text() for t in made[0][1].texts] == [scores["note"]] == \
+        ["No “+ terr.” variants (no astrocyte territory in D2)"]
+    assert [t.get_text() for t in made[1][1].texts] == ["D2 (Allen Brain\nObservatory,\ntwo-photon)"]
     for _, fig, _ in made:
         plt.close(fig)
     bad = json.loads(p["table"].read_text(encoding="utf-8"))

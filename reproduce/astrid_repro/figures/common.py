@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import textwrap
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,19 @@ TEST_KEYS = {"TUnCaT": "TUnCaT", "FISSA": "FISSA", "CNMF": "CNMF", "ring": "Ring
 PUBLIC_FAMILY = ("TUnCaT", "FISSA", "CNMF", "Ring", "Suite2p")
 EXAMPLE_COLOR = "#A89200"            # the example ROI's outline, a dark yellow on the gray image
 UNIT_LINE = "#D0D0D0"                # the gray lines joining a unit's dots
+# Each dataset's descriptor, as the paper's Datasets section words it: the figures print it after the dataset's
+# name where they first name the dataset, under the example's image (``image_name``)
+DESCRIPTORS = {"D2": "Allen Brain Observatory, two-photon", "D3": "CRCNS cai-1, two-photon with electrophysiology",
+               "D4": "NAOMi simulation, two-photon", "D5": "mouse hippocampus, one-photon"}
+# The note under the scores of a public dataset: the paper's figures of D1 add TUnCaT and CNMF given the
+# astrocyte territory ("+ terr."), which these datasets do not have (their labels are neurons only)
+NO_TERRITORY = "No “+ terr.” variants (no astrocyte territory in {name})"
+
+
+def image_name(dataset: str) -> str:
+    """The dataset as the example's image names it: its name and descriptor, "D3 (CRCNS cai-1, two-photon with
+    electrophysiology)", on lines of at most 18 characters, as the paper prints it."""
+    return textwrap.fill(f"{dataset} ({DESCRIPTORS[dataset]})", 18, break_on_hyphens=False)
 
 
 def label(key: str) -> str:
