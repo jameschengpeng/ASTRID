@@ -240,7 +240,7 @@ the code that draws the data panels of its figures.
   Supplementary Fig. S7). For D3, the export every method read is built from the CRCNS download, with the
   ROI of each cell from `reproduce/cai1_rois`, drawn by hand once, blind to all methods (the dataset ships
   none).
-- **With the authors' recordings:** D1, D6 and D7 are available from Axel Nimmerjahn on reasonable request,
+- **With the authors' recordings:** D1, D6 and D7 are available on request,
   as the documented input files that the builders below read, with imaging locations and recordings named
   generically.
   Their settings, the ROI detection, the builders of their tests and the statistics of their

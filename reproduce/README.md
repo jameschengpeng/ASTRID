@@ -73,7 +73,7 @@ were left out of the input of every method.
      movie binned 4 × 4, the ROI drawn by hand on the cell, the scored frames and the spike-predicted calcium
      (`public_data.py`). `cai1_export.py` builds it from the CRCNS download, with the masks of `cai1_rois/`
      (the dataset ships none).
-   - D1, D6 and D7 were recorded by the authors and are available from Axel Nimmerjahn on reasonable request.
+   - D1, D6 and D7 were recorded by the authors and are available on request.
 2. **ASTRID** on each case with `astrid.demix` and the settings of `datasets.yaml`.
    - The baseline F0 of each pixel is, by default, the 10th percentile of its 1-s means in a moving 60-s window
      (D7's own rule is in `datasets.yaml`).
