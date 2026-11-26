@@ -1,16 +1,17 @@
-"""Figure 5: D3, the CRCNS cai-1 dataset, where each imaged neuron's spikes were recorded electrically. Every
-panel is drawn from the outputs of ``reproduce/``: the table (``cv_cai1.json``, written by ``tables_public
-cai1``), the export every method read (one ``<recording>.h5`` per recording and its ``index.json``) and the
-traces every method gave (ASTRID's ``result.npz``, the peers', Suite2p's).
+"""Figure 4: D3, the CRCNS cai-1 dataset, where each imaged neuron's spikes were recorded electrically. Its
+data panels, B and C (A, the design, is a schematic), are drawn from the outputs of ``reproduce/``: the table
+(``cv_cai1.json``, written by ``tables_public cai1``), the export every method read (one ``<recording>.h5``
+per recording and its ``index.json``) and the traces every method gave (ASTRID's ``result.npz``, the peers',
+Suite2p's).
 
-- **Scores** (5B; ``draw_scores``): each method's correlation with the calcium predicted from the spikes, per
+- **Scores** (4C; ``draw_scores``): each method's correlation with the calcium predicted from the spikes, per
   cell (the mean over its recordings), at the setting chosen for the cell by leave-one-cell-out
   cross-validation, the mean as a bar, the cells imaged with GCaMP6f as circles and those with GCaMP6s as
   triangles, and above each method the mark of the Holm-corrected p of ASTRID against it over the cells,
   Holm over the five methods. Two notes under the axis say why the "+ terr." variants of the paper's D1
   figures are missing (``common.NO_TERRITORY``) and that every method had the same inputs and scoring
   (``common.FAIR_NOTE``).
-- **Example** (5A; ``example``, ``draw_image``, ``draw_traces``): one recording of one cell. On the left, the
+- **Example** (4B; ``example``, ``draw_image``, ``draw_traces``): one recording of one cell. On the left, the
   mean over the scored frames of the registered, 4 x 4 binned movie the methods were run on, from its 1st to
   its 99.5th percentile, with the cell's hand-drawn ROI in yellow and a scale bar of about 10 um (the pixel
   size of D3, about 0.47 um per binned pixel, is an estimate), the dataset named below with its descriptor
@@ -32,7 +33,7 @@ and method, and Ring's and Suite2p's per-recording correlations too.
 **The scoring** is the table's. ``tables_public cai1`` writes D3's two (its module docstring): as reported
 (``cv_cai1.json``), ASTRID's ΔF/F0 against every other trace with only its mean removed, and with the same
 running baseline removed from every trace (``--baseline equal``, ``cv_cai1_equal_baseline.json``, whose
-``table["baseline"]`` is the note ``tables_public.EQUAL_BASELINE``), the scoring the paper's Figure 5 shows.
+``table["baseline"]`` is the note ``tables_public.EQUAL_BASELINE``), the scoring the paper's Figure 4 shows.
 Given the equal table, every trace but ASTRID's is scored and drawn after its own running baseline is removed
 under ASTRID's rule (``public_data.minus_baseline`` at the recording's frame rate), so the correlations
 recomputed here, the example the rule picks and the traces drawn are those of that scoring.
@@ -59,7 +60,7 @@ from astrid_repro.tables_public import EQUAL_BASELINE
 
 ORDER = F.PUBLIC_ORDER
 NAME = "D3 CRCNS cai-1"
-PANELS = ("fig5b", "fig5a")       # the file stems of the scores (Fig. 5B) and of the example (Fig. 5A)
+PANELS = ("fig4c", "fig4b")       # the file stems of the scores (Fig. 4C) and of the example (Fig. 4B)
 MARKERS = {"GCaMP6f": "o", "GCaMP6s": "^"}
 WINDOW_S = 30.0
 UM_PER_PX = 0.47          # an estimate (zoom 50, about 30 um over 256 px, binned 4 x 4): not in the file headers
@@ -108,7 +109,7 @@ def indicators(export: str | Path) -> dict[str, str]:
 
 
 def draw_scores(ax: Any, table: dict[str, Any], indicator: dict[str, str]) -> dict[str, Any]:
-    """Panel 5B: each method's correlation per cell, with the mark of each comparison (module docstring)."""
+    """Panel 4C: each method's correlation per cell, with the mark of each comparison (module docstring)."""
     cells = table["cells"]
     counts = {ind: sum(indicator[c] == ind for c in cells) for ind in MARKERS}
     marks = {m: F.stars(float(t["p_holm"])) for m, t in table["tests"].items()}
@@ -237,7 +238,7 @@ def example(table: dict[str, Any], *, export: str | Path, ours: Sequence[str | P
 
 
 def draw_image(ax: Any, ex: dict[str, Any]) -> dict[str, Any]:
-    """The left part of panel 5A (module docstring)."""
+    """The left part of panel 4B (module docstring)."""
     img, roi = ex["image"], ex["roi"]
     lo, hi = np.percentile(img, [1, 99.5])
     ax.imshow(img, cmap="gray", vmin=lo, vmax=hi, interpolation="nearest")
@@ -256,7 +257,7 @@ def draw_image(ax: Any, ex: dict[str, Any]) -> dict[str, Any]:
 
 
 def draw_traces(fig: Any, ex: dict[str, Any]) -> dict[str, Any]:
-    """The right part of panel 5A (module docstring)."""
+    """The right part of panel 4B (module docstring)."""
     from matplotlib.lines import Line2D
 
     axes = fig.subplots(len(ORDER) + 1, 1, sharex=True, gridspec_kw={"height_ratios": [1] * len(ORDER) + [0.35]})
@@ -290,8 +291,8 @@ def draw_traces(fig: Any, ex: dict[str, Any]) -> dict[str, Any]:
     key = [Line2D([], [], color=PREDICTED, lw=1.0, label="Spike-predicted calcium"),
            Line2D([], [], color="#606060", lw=1.0, label="Demixed trace, in the method's color")]
     typical = ex["typicality"]                    # how typical the example is, as the key's title
-    fig.legend(handles=key, loc="outside lower center", ncols=1, frameon=False,
-               title=textwrap.fill(typical["line"], 56, break_on_hyphens=False))
+    title = textwrap.fill(typical["line"], 44, break_on_hyphens=False)   # as the paper wraps it (44 characters)
+    fig.legend(handles=key, loc="outside lower center", ncols=1, frameon=False, title=title)
     return {"dataset": "D3", "cell": ex["cell"], "recording": ex["name"], "indicator": ex["indicator"],
             "typicality": typical,
             "best other method": ex["best_other"], "ASTRID's r above the best other method's (cell)": ex["margin"],
@@ -308,7 +309,7 @@ def draw_traces(fig: Any, ex: dict[str, Any]) -> dict[str, Any]:
 
 def panels(table_path: str | Path, *, export: str | Path, ours: Sequence[str | Path], peers: str | Path | None,
            suite2p: str | Path, cnmf_grid: str | Path | None = None) -> list[F.Panel]:
-    """Figure 5: (file stem, figure, record) for the scores, the example's image and the example's traces;
+    """Figure 4: (file stem, figure, record) for the scores, the example's image and the example's traces;
     ``cnmf_grid`` as given to ``tables_public cai1``."""
     import matplotlib.pyplot as plt
 

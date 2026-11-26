@@ -1,4 +1,4 @@
-"""Supplementary Figure S6: D2 (Allen Brain Observatory), D4 (NAOMi) and D5 (one-photon), the public datasets
+"""Supplementary Figure S7: D2 (Allen Brain Observatory), D4 (NAOMi) and D5 (one-photon), the public datasets
 scored by transient detection, one row each. Every panel is drawn from the outputs of ``reproduce/``: the
 table of the dataset (``cv_<dataset>.json``, written by ``tables_public public``), the traces every method gave
 (ASTRID's ``result.npz``, the peers', Suite2p's) and TUnCaT's figshare archive (the movies, masks and labels).
@@ -50,7 +50,7 @@ from astrid_repro.ring import video_ring
 
 ORDER = F.PUBLIC_ORDER
 NAMES = {"ABO": "ABO", "NAOMi": "NAOMi", "1p": "one-photon"}       # printed after the dataset's ID
-PANELS = {"ABO": ("figS6b", "figS6a"), "NAOMi": ("figS6d", "figS6c"), "1p": ("figS6f", "figS6e")}  # scores, example
+PANELS = {"ABO": ("figS7b", "figS7a"), "NAOMi": ("figS7d", "figS7c"), "1p": ("figS7f", "figS7e")}  # scores, example
 FPS = {"ABO": 30.0, "NAOMi": 30.0, "1p": 20.0}
 MIN_TRANSIENTS = 8
 MIN_ASTRID_F1 = 0.5                  # an ROI that ASTRID detects well, not only less badly than the others

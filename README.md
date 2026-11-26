@@ -236,8 +236,8 @@ See [`reproduce/README.md`](reproduce/README.md): the paper's evaluation on its 
 the code that draws the data panels of its figures.
 
 - **From public data alone:** D2–D5 (the Allen Brain Observatory, CRCNS cai-1, NAOMi and one-photon datasets),
-  from the public movies to every method's traces, the tables and the figures (Fig. 5 and the supplementary
-  figure of D2, D4 and D5). For D3, the export every method read is built from the CRCNS download, with the
+  from the public movies to every method's traces, the tables and the figures (the data panels of Fig. 4 and
+  Supplementary Fig. S7). For D3, the export every method read is built from the CRCNS download, with the
   ROI of each cell from `reproduce/cai1_rois`, drawn by hand once, blind to all methods (the dataset ships
   none).
 - **With the authors' recordings:** D1, D6 and D7 are available from Axel Nimmerjahn on reasonable request,

@@ -1,5 +1,5 @@
-"""The figure code on small synthetic data: the shared plot of the scores, Figure 5's panels (D3) from a table,
-an export and traces made here, and one row of the supplementary figure of D2, D4 and D5 with a toy scoring in
+"""The figure code on small synthetic data: the shared plot of the scores, Figure 4's panels (D3) from a table,
+an export and traces made here, and one row of Supplementary Figure S7 (D2, D4 and D5) with a toy scoring in
 place of TUnCaT's evaluation (which is GPL-2 and tested in its own folder)."""
 
 from __future__ import annotations
@@ -99,7 +99,7 @@ def _cai1(tmp_path: Path) -> dict[str, Any]:
 def test_cai1_panels(tmp_path: Path) -> None:
     p = _cai1(tmp_path)
     made = cai1.panels(p["table"], export=p["export"], ours=p["ours"], peers=p["peers"], suite2p=p["suite2p"])
-    assert [stem for stem, _, _ in made] == ["fig5b_D3_scores", "fig5a_D3_image", "fig5a_D3_traces"]
+    assert [stem for stem, _, _ in made] == ["fig4c_D3_scores", "fig4b_D3_image", "fig4b_D3_traces"]
     scores, traces = made[0][2], made[2][2]
     table = cai1.read_table(p["table"])
     margin = np.asarray(table["values"]["ours"]) - np.max([table["values"][m] for m in cai1.ORDER[1:]], axis=0)
@@ -117,10 +117,12 @@ def test_cai1_panels(tmp_path: Path) -> None:
     assert typical["wins"] == wins and typical["cells"] == 5
     assert typical["line"] == (f"ASTRID's correlation was higher than each other method's for {min(wins.values())} "
                                f"to {max(wins.values())} of the 5 cells.")
-    assert made[2][1].legends[0].get_title().get_text().replace("\n", " ") == typical["line"]
+    title = made[2][1].legends[0].get_title().get_text()          # 44 characters a line, as the paper prints it
+    assert title.replace("\n", " ") == typical["line"] and max(len(x) for x in title.split("\n")) <= 44
     assert [t.get_text() for t in made[1][1].texts] == ["D3 (CRCNS cai-1,\ntwo-photon with\nelectrophysiology)"]
     assert [t.get_text() for t in made[0][1].texts] == [scores["note"]] == \
-        ["No “+ terr.” variants (no astrocyte territory in D3)\nSame inputs and scoring for every method (Fig. 2)"]
+        ["No “+ terr.” variants (no astrocyte territory in D3)\nSame inputs and scoring for every method\n"
+         "(Supplementary Fig. S1)"]
     for _, fig, _ in made:
         plt.close(fig)
     out = tmp_path / "figs"
@@ -128,7 +130,7 @@ def test_cai1_panels(tmp_path: Path) -> None:
                          str(p["ours"][0]), "--peers", str(p["peers"]), "--suite2p", str(p["suite2p"]),
                          "--out", str(out), "--formats", "png"]) == 0
     assert sorted(f.name for f in out.iterdir()) == sorted(
-        f"{s}.{x}" for s in ("fig5b_D3_scores", "fig5a_D3_image", "fig5a_D3_traces") for x in ("png", "json"))
+        f"{s}.{x}" for s in ("fig4c_D3_scores", "fig4b_D3_image", "fig4b_D3_traces") for x in ("png", "json"))
     bad = json.loads(p["table"].read_text(encoding="utf-8"))
     bad["table"]["stats"]["FISSA"]["p_holm"] = 0.5                   # not Holm's correction of the raw p
     (tmp_path / "bad.json").write_text(json.dumps(bad), encoding="utf-8")
@@ -188,7 +190,7 @@ def test_cai1_equal_baseline(tmp_path: Path) -> None:
     assert figures_main(["cai1", "--table", str(table), "--export", str(p["export"]), "--ours",
                          str(p["ours"][0]), "--peers", str(p["peers"]), "--cnmf-grid", str(grid), "--suite2p",
                          str(p["suite2p"]), "--out", str(out), "--formats", "png"]) == 0
-    assert json.loads((out / "fig5b_D3_scores.json").read_text(encoding="utf-8"))["scoring"] == T.EQUAL_BASELINE
+    assert json.loads((out / "fig4c_D3_scores.json").read_text(encoding="utf-8"))["scoring"] == T.EQUAL_BASELINE
 
 
 # ---- D2, D4, D5, with a toy scoring ----
@@ -299,7 +301,7 @@ def test_public_panels(tmp_path: Path) -> None:
     p = _public(tmp_path)
     made = public.panels("ABO", p["table"], archive=p["archive"], ours=p["ours"], peers=None, suite2p=p["suite2p"],
                          evaluator=toy_view)
-    assert [stem for stem, _, _ in made] == ["figS6b_D2_scores", "figS6a_D2_image", "figS6a_D2_traces"]
+    assert [stem for stem, _, _ in made] == ["figS7b_D2_scores", "figS7a_D2_image", "figS7a_D2_traces"]
     scores, image, traces = (rec for _, _, rec in made)
     table = public.read_table(p["table"], "ABO")
     f1 = np.asarray(table["values"]["ours"])

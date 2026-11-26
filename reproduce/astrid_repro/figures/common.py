@@ -31,7 +31,7 @@ METHODS: dict[str, tuple[str, str]] = {
 }
 LONG = {"ours": "ASTRID", "TUnCaT": "TUnCaT", "FISSA": "FISSA", "CNMF": "CNMF", "ring": "the ring subtraction",
         "suite2p": "Suite2p"}
-# the methods of the public datasets' figures (Fig. 5 and the supplementary figure of D2, D4 and D5), in their order
+# the methods of the public datasets' figures (Fig. 4 and Supplementary Fig. S7), in their order
 PUBLIC_ORDER = ("ours", "TUnCaT", "FISSA", "CNMF", "ring", "suite2p")
 # each comparison's name in the tables' tests, and the Holm family of D2-D5 (five comparisons)
 TEST_KEYS = {"TUnCaT": "TUnCaT", "FISSA": "FISSA", "CNMF": "CNMF", "ring": "Ring", "suite2p": "Suite2p"}
@@ -45,9 +45,9 @@ DESCRIPTORS = {"D2": "Allen Brain Observatory, two-photon", "D3": "CRCNS cai-1, 
 # The note under the scores of a public dataset: the paper's figures of D1 add TUnCaT and CNMF given the
 # astrocyte territory ("+ terr."), which these datasets do not have (their labels are neurons only)
 NO_TERRITORY = "No “+ terr.” variants (no astrocyte territory in {name})"
-# The note under the scores of Figure 5 (D3), below the one above: every method had the same inputs and scoring,
-# as the paper's Figure 2 lays out
-FAIR_NOTE = "Same inputs and scoring for every method (Fig. 2)"
+# The note under the scores of Figure 4 (D3), below the one above: every method had the same inputs and scoring,
+# as the paper's Supplementary Figure S1 lays out; on two lines, as the paper prints it under that panel
+FAIR_NOTE = "Same inputs and scoring for every method\n(Supplementary Fig. S1)"
 
 
 def image_name(dataset: str) -> str:
